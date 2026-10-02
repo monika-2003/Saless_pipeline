@@ -13,6 +13,7 @@ export function DealList({ ids = [], emptyTitle, emptyMessage }) {
     getDeal,
     overlays,
     selectedIds,
+    pinSelected,
     focusedDealId,
     setFocusedDealId,
     openDeal,
@@ -22,7 +23,10 @@ export function DealList({ ids = [], emptyTitle, emptyMessage }) {
     discardFailed,
     resolveConflict,
   } = usePipeline()
-  const orderedIds = useMemo(() => pinSelectedFirst(ids, selectedIds), [ids, selectedIds])
+  const orderedIds = useMemo(
+    () => (pinSelected ? pinSelectedFirst(ids, selectedIds) : ids),
+    [ids, pinSelected, selectedIds],
+  )
   const parentRef = useRef(null)
   const virtualizer = useVirtualizer({
     count: orderedIds.length,

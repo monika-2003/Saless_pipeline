@@ -1,8 +1,7 @@
-import { Calendar, CircleDollarSign, Phone, User } from 'lucide-react'
 import { STAGE_BY_ID } from '../../data/constants.js'
 import { canMoveStage, movableStages } from '../../utils/stageOrder.js'
 import { usePipeline } from '../../store/pipelineContext.js'
-import { getDealActivity, groupActivityByDay } from '../../utils/dealActivity.js'
+import { getDealDrawerActivity, groupActivityByDay } from '../../utils/dealActivity.js'
 import { formatDateLong, formatMoney, formatTime } from '../../utils/format.js'
 import { Avatar } from '../common/Avatar.jsx'
 import { Badge } from '../common/Badge.jsx'
@@ -22,6 +21,7 @@ export function DealDrawer() {
     discardFailed,
     resolveConflict,
     currentUser,
+    activityEvents,
   } = usePipeline()
   const deal = openedDealId ? getDeal(openedDealId) : null
   if (!deal) return null
@@ -30,7 +30,7 @@ export function DealDrawer() {
   const conflict = overlays.conflicts[deal.id]
   const pending = overlays.pending[deal.id]
   const saved = overlays.saved?.[deal.id]
-  const groups = groupActivityByDay(getDealActivity(deal, currentUser.name))
+  const groups = groupActivityByDay(getDealDrawerActivity(deal, activityEvents, currentUser.name))
 
   return (
     <Drawer title={deal.company} labelledBy="deal-drawer-title" onClose={closeDeal}>
@@ -133,27 +133,32 @@ export function DealDrawer() {
         {groups.map((group) => (
           <div key={group.label}>
             <h3>{group.label}</h3>
-            {group.events.map((event) => (
-              <div className="activity-item" key={event.id}>
-                <Avatar name={event.actor} />
-                <div>
-                  <p>
-                    {event.actor} {event.text}
-                  </p>
-                  <small>{formatTime(event.at)}</small>
+            {group.events.map((event) => {
+              const stage = event.toStage ? STAGE_BY_ID[event.toStage] : null
+              return (
+                <div className={event.live ? 'activity-item is-live' : 'activity-item'} key={event.id}>
+                  <Avatar name={event.actor} />
+                  <div>
+                    <p>
+                      {event.actor} {event.text}
+                      {event.type === 'DEAL_MOVED' ? (
+                        stage ? (
+                          <span className="activity-stage-chip" style={{ '--stage': stage.color }}>
+                            {stage.label}
+                          </span>
+                        ) : (
+                          ` to ${event.toStage || 'another stage'}`
+                        )
+                      ) : null}
+                    </p>
+                    <small>{formatTime(event.at)}</small>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ))}
       </div>
-
-      <p className="deal-contact" style={{ marginTop: 20, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <span><User size={12} /> {deal.owner}</span>
-        <span><CircleDollarSign size={12} /> {formatMoney(deal.value)}</span>
-        <span><Calendar size={12} /> {formatDateLong(deal.expectedCloseDate)}</span>
-        <span><Phone size={12} /> {formatDateLong(deal.lastContactedAt)}</span>
-      </p>
     </Drawer>
   )
 }

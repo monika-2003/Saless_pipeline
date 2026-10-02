@@ -73,6 +73,7 @@ export function PipelineProvider({ children }) {
   const [stageIds, setStageIds] = useState(null)
   const [overlays, setOverlays] = useState({ ...emptyOverlays(), saved: Object.create(null) })
   const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [pinSelected, setPinSelected] = useState(false)
   const [view, setView] = useState('all')
   const [layout, setLayout] = useState('board')
 
@@ -643,6 +644,7 @@ export function PipelineProvider({ children }) {
   }, [moveLocal, openDeal, openedDealId, pushActivity, pushToast, selectedIds])
 
   const toggleSelect = useCallback((dealId, options = {}) => {
+    setPinSelected(false)
     setSelectedIds((current) => {
       const next = options.replace ? new Set() : new Set(current)
       if (options.replace) {
@@ -661,6 +663,7 @@ export function PipelineProvider({ children }) {
     const to = ids.indexOf(toId)
     if (from < 0 || to < 0) return
     const [start, end] = from < to ? [from, to] : [to, from]
+    setPinSelected(false)
     setSelectedIds((current) => {
       const next = new Set(current)
       for (let i = start; i <= end; i += 1) next.add(ids[i])
@@ -669,10 +672,18 @@ export function PipelineProvider({ children }) {
   }, [])
 
   const selectMany = useCallback((ids) => {
+    setPinSelected(false)
     setSelectedIds(new Set(ids))
   }, [])
 
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), [])
+  const clearSelection = useCallback(() => {
+    setPinSelected(false)
+    setSelectedIds(new Set())
+  }, [])
+
+  const pinSelectedToTop = useCallback(() => {
+    setPinSelected((current) => !current)
+  }, [])
 
   const bulkMove = useCallback(async (ids, toStage, options = {}) => {
     const jobs = []
@@ -926,6 +937,8 @@ export function PipelineProvider({ children }) {
       matchingCount,
       overlays,
       selectedIds,
+      pinSelected,
+      pinSelectedToTop,
       view,
       setView,
       layout,
@@ -983,6 +996,8 @@ export function PipelineProvider({ children }) {
       openDeal,
       openedDealId,
       overlays,
+      pinSelected,
+      pinSelectedToTop,
       ready,
       requestBulkMove,
       requestMove,

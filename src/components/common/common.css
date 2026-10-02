@@ -528,7 +528,8 @@
   top: 0;
   right: 0;
   height: 100%;
-  width: min(420px, 100%);
+  width: var(--drawer-width, 420px);
+  max-width: 100%;
   background: var(--surface);
   border-left: 1px solid var(--border);
   box-shadow: var(--shadow-md);
@@ -536,6 +537,46 @@
   display: flex;
   flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+.drawer-resize {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+  touch-action: none;
+}
+
+.drawer-resize::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 3px;
+  height: 36px;
+  border-radius: 99px;
+  background: var(--border-strong);
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity var(--ease);
+}
+
+.drawer-resize:hover::after,
+.drawer-resize:focus-visible::after,
+.drawer.is-resizing .drawer-resize::after {
+  opacity: 1;
+}
+
+.drawer.is-resizing {
+  user-select: none;
+}
+
+body.is-drawer-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .drawer-header,
@@ -992,7 +1033,11 @@
 
 @media (max-width: 640px) {
   .drawer {
-    width: 100%;
+    width: 100% !important;
     border-left: 0;
+  }
+
+  .drawer-resize {
+    display: none;
   }
 }

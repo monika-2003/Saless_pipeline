@@ -11,6 +11,7 @@ import { DealDrawer } from './components/deal/DealDrawer.jsx'
 import { BulkProgress, BulkToolbar } from './components/bulk/BulkToolbar.jsx'
 import { SimulationPanel } from './components/simulation/SimulationPanel.jsx'
 import { Skeleton } from './components/common/Skeleton.jsx'
+import { useFilterChromeScroll } from './hooks/useFilterChromeScroll.js'
 import { usePipeline } from './store/pipelineContext.js'
 import { STAGE_BY_ID, STAGES } from './data/constants.js'
 import { ACTIVITY_TYPES, formatActivityHeadline } from './utils/activity.js'
@@ -81,6 +82,7 @@ function ActivityLive() {
 
 function AppShell() {
   const { ready, view, layout, listIds, clearSelection, openedDealId } = usePipeline()
+  const { shellRef, headerRef, tabsRef, actionsRef } = useFilterChromeScroll(ready)
   const pipelineView = view === 'all' || view === 'mine'
   const tableLayout = pipelineView && layout === 'table'
   const showBoardChrome = pipelineView && layout !== 'table'
@@ -89,17 +91,24 @@ function AppShell() {
 
   return (
     <div
+      ref={shellRef}
       className={cx('app-shell', tableLayout && 'is-table-layout')}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !openedDealId) clearSelection()
       }}
     >
-      <Header />
-      <ViewTabs />
+      <div className="app-sticky-header" ref={headerRef}>
+        <Header />
+      </div>
+      <div className="app-view-tabs-wrap" ref={tabsRef}>
+        <ViewTabs />
+      </div>
       <FilterBar />
-      {showBoardChrome ? <ActivityLive /> : null}
-      <BulkToolbar />
-      <BulkProgress />
+      <div className="app-sticky-actions" ref={actionsRef}>
+        {showBoardChrome ? <ActivityLive /> : null}
+        <BulkToolbar />
+        <BulkProgress />
+      </div>
       <main className="app-main">
         {view === 'attention' ? (
           <AttentionTable />

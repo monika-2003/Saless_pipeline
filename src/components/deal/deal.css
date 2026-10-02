@@ -202,7 +202,9 @@
 }
 
 .activity-group {
-  margin-top: 16px;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
 }
 
 .activity-group h3 {
@@ -220,6 +222,14 @@
 
 .activity-item p {
   font-size: 13px;
+}
+
+.activity-item.is-live p {
+  font-weight: 500;
+}
+
+.activity-item .activity-stage-chip {
+  margin-left: 4px;
 }
 
 .activity-item small {

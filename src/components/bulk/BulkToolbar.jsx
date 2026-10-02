@@ -1,3 +1,4 @@
+import { ArrowUpToLine, X } from 'lucide-react'
 import { STAGES, STAGE_BY_ID } from '../../data/constants.js'
 import { formatCount } from '../../utils/format.js'
 import { canMoveStage } from '../../utils/stageOrder.js'
@@ -9,7 +10,7 @@ import { cx } from '../../utils/cx.js'
 import './bulk.css'
 
 export function BulkToolbar() {
-  const { selectedIds, clearSelection, requestBulkMove, getDeal } = usePipeline()
+  const { selectedIds, pinSelected, pinSelectedToTop, clearSelection, requestBulkMove, getDeal } = usePipeline()
   const count = selectedIds.size
   const ids = [...selectedIds]
   const hasSelection = count > 0
@@ -55,12 +56,32 @@ export function BulkToolbar() {
         >
           Mark lost
         </Button>
-        {hasSelection ? (
-          <Button size="sm" variant="ghost" onClick={clearSelection}>
-            Clear
-          </Button>
-        ) : null}
       </div>
+      {hasSelection ? (
+        <div className="bulk-toolbar-end">
+          <button
+            type="button"
+            className={cx('bulk-pin-selected', pinSelected && 'is-pinned')}
+            aria-pressed={pinSelected}
+            aria-label={pinSelected ? 'Restore order' : 'Bring to top'}
+            title={pinSelected ? 'Restore order' : 'Bring to top'}
+            onClick={pinSelectedToTop}
+          >
+            <ArrowUpToLine size={15} />
+            <span className="bulk-action-label">{pinSelected ? 'Restore order' : 'Bring to top'}</span>
+          </button>
+          <button
+            type="button"
+            className="bulk-clear-selected"
+            aria-label="Unselect all"
+            title="Unselect all"
+            onClick={clearSelection}
+          >
+            <X size={15} />
+            <span className="bulk-action-label">Unselect all</span>
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

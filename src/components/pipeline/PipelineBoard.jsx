@@ -15,6 +15,7 @@ export function PipelineBoard() {
     requestMove,
     overlays,
     selectedIds,
+    pinSelected,
     focusedDealId,
     setFocusedDealId,
     openDeal,
@@ -35,9 +36,11 @@ export function PipelineBoard() {
   const columns = useMemo(
     () => STAGES.map((stage) => ({
       stage,
-      ids: pinSelectedFirst(visibleStageIds[stage.id] || [], selectedIds),
+      ids: pinSelected
+        ? pinSelectedFirst(visibleStageIds[stage.id] || [], selectedIds)
+        : (visibleStageIds[stage.id] || []),
     })),
-    [selectedIds, visibleStageIds],
+    [pinSelected, selectedIds, visibleStageIds],
   )
 
   const onDragEnd = useCallback(

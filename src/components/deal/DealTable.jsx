@@ -22,6 +22,7 @@ export function DealTable({
     getDeal,
     overlays,
     selectedIds,
+    pinSelected,
     toggleSelect,
     selectMany,
     openDeal,
@@ -41,7 +42,10 @@ export function DealTable({
   const [pageSize, setPageSize] = useState(TABLE_PAGE_SIZE)
   const activeTab = resolvedTabs.find((tab) => tab.id === tabId) || resolvedTabs[0]
   const rawIds = resolvedIdsByTab[activeTab?.id] || []
-  const ids = useMemo(() => pinSelectedFirst(rawIds, selectedIds), [rawIds, selectedIds])
+  const ids = useMemo(
+    () => (pinSelected ? pinSelectedFirst(rawIds, selectedIds) : rawIds),
+    [pinSelected, rawIds, selectedIds],
+  )
   const pageCount = Math.max(1, Math.ceil(ids.length / pageSize))
   const safePage = Math.min(page, pageCount)
 
@@ -55,9 +59,9 @@ export function DealTable({
   }, [tabId, ids.length, pageSize])
 
   useEffect(() => {
-    if (!selectedIds.size) return
+    if (!pinSelected || !selectedIds.size) return
     if (rawIds.some((id) => selectedIds.has(id))) setPage(1)
-  }, [rawIds, selectedIds])
+  }, [pinSelected, rawIds, selectedIds])
 
   const pageIds = useMemo(() => {
     const start = (safePage - 1) * pageSize
