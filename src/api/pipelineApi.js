@@ -21,7 +21,7 @@ function snapshot(deal) {
   return { ...deal }
 }
 
-export const fakeApi = {
+export const pipelineApi = {
   init(dealsById) {
     serverDeals = cloneDealsById(dealsById)
   },

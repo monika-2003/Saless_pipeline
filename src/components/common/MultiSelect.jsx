@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Minus } from 'lucide-react'
 import { cx } from '../../utils/cx.js'
 
 export function MultiSelect({
@@ -22,6 +22,9 @@ export function MultiSelect({
     () => options.filter((option) => selectedSet.has(option.value)),
     [options, selectedSet],
   )
+  const allSelected = options.length > 0 && selectedOptions.length === options.length
+  const someSelected = selectedOptions.length > 0 && !allSelected
+  const itemCount = options.length + 1
 
   useEffect(() => {
     if (!open) {
@@ -31,7 +34,7 @@ export function MultiSelect({
     if (!buttonRef.current) return undefined
 
     const rect = buttonRef.current.getBoundingClientRect()
-    const menuHeight = Math.min(options.length * 36 + 48, 280)
+    const menuHeight = Math.min(itemCount * 36 + 48, 280)
     const spaceBelow = window.innerHeight - rect.bottom
     const openUp = spaceBelow < menuHeight && rect.top > spaceBelow
     const width = Math.min(Math.max(rect.width, 220), window.innerWidth - 16)
@@ -64,7 +67,7 @@ export function MultiSelect({
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKey, true)
     }
-  }, [open, options])
+  }, [open, itemCount])
 
   function toggle(option) {
     if (selectedSet.has(option.value)) {
@@ -72,6 +75,15 @@ export function MultiSelect({
       return
     }
     onChange([...selectedValues, option.value])
+  }
+
+  function toggleAll() {
+    onChange(allSelected ? [] : options.map((option) => option.value))
+  }
+
+  function activate(index) {
+    if (index === 0) toggleAll()
+    else toggle(options[index - 1])
   }
 
   const summary = !selectedOptions.length
@@ -101,16 +113,16 @@ export function MultiSelect({
           if (event.key === 'ArrowDown') {
             event.preventDefault()
             setOpen(true)
-            setHighlight((index) => Math.min(options.length - 1, index < 0 ? 0 : index + 1))
+            setHighlight((index) => Math.min(itemCount - 1, index < 0 ? 0 : index + 1))
           }
           if (event.key === 'ArrowUp') {
             event.preventDefault()
             setOpen(true)
-            setHighlight((index) => Math.max(0, index < 0 ? options.length - 1 : index - 1))
+            setHighlight((index) => Math.max(0, index < 0 ? itemCount - 1 : index - 1))
           }
           if ((event.key === 'Enter' || event.key === ' ') && open && highlight >= 0) {
             event.preventDefault()
-            toggle(options[highlight])
+            activate(highlight)
           }
         }}
       >
@@ -138,8 +150,38 @@ export function MultiSelect({
               }}
             >
               <ul id={listId} role="listbox" aria-multiselectable="true" className="multi-select-list">
+                <li className="multi-select-all">
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={allSelected}
+                    className={cx(
+                      'select-option',
+                      allSelected && 'is-selected',
+                      highlight === 0 && 'is-active',
+                    )}
+                    onMouseEnter={() => setHighlight(0)}
+                    onClick={toggleAll}
+                  >
+                    <span
+                      className={cx(
+                        'check-wrap',
+                        allSelected && 'is-checked',
+                        someSelected && 'is-partial',
+                      )}
+                      aria-hidden="true"
+                    >
+                      <span className="check-box">
+                        {someSelected ? <Minus size={11} strokeWidth={3} /> : null}
+                        {allSelected ? <Check size={11} strokeWidth={3} /> : null}
+                      </span>
+                    </span>
+                    <span>Select all</span>
+                  </button>
+                </li>
                 {options.map((option, index) => {
                   const isSelected = selectedSet.has(option.value)
+                  const itemIndex = index + 1
                   return (
                     <li key={`${option.value}-${index}`}>
                       <button
@@ -149,9 +191,9 @@ export function MultiSelect({
                         className={cx(
                           'select-option',
                           isSelected && 'is-selected',
-                          index === highlight && 'is-active',
+                          itemIndex === highlight && 'is-active',
                         )}
-                        onMouseEnter={() => setHighlight(index)}
+                        onMouseEnter={() => setHighlight(itemIndex)}
                         onClick={() => toggle(option)}
                       >
                         <span className={cx('check-wrap', isSelected && 'is-checked')} aria-hidden="true">
@@ -170,15 +212,6 @@ export function MultiSelect({
                   )
                 })}
               </ul>
-              {selectedOptions.length > 0 ? (
-                <button
-                  type="button"
-                  className="multi-select-clear"
-                  onClick={() => onChange([])}
-                >
-                  Clear
-                </button>
-              ) : null}
             </div>,
             document.body,
           )

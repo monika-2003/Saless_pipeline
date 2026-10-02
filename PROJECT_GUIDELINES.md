@@ -149,12 +149,12 @@ Do not drop the “why” grouping. Do not make this look like All Deals with a 
 
 # 8. Optimistic Update Rules
 
-Mutation lifecycle (already implemented in `PipelineProvider` + `fakeApi`):
+Mutation lifecycle (already implemented in `PipelineProvider` + `pipelineApi`):
 
 1. User action (drag, drawer Move stage, table Move to, bulk Move / Mark lost)
 2. Immediate local stage update (`moveLocal`)
 3. Overlay `pending` → UI **Saving…**
-4. `fakeApi.moveDeal` with `clientVersion`
+4. `pipelineApi.moveDeal` with `clientVersion`
 5. Success → apply server snapshot, bump version, brief **Saved**, optional undo toast
 6. Network failure → keep optimistic stage, overlay `failed`, **Save failed** + **Retry** + **Undo**
 7. Version mismatch → overlay `conflicts`, do not silently overwrite
@@ -390,7 +390,7 @@ Keep the current shape unless there is a concrete failure:
 | App shell / views | `src/App.jsx` |
 | State | `src/store/PipelineProvider.jsx` + `pipelineContext.js` |
 | Stage id lists | `src/store/stageLists.js` |
-| Fake server | `src/api/fakeApi.js` |
+| Pipeline API | `src/api/pipelineApi.js` |
 | Dataset | `src/data/mockData.js`, `src/data/constants.js` |
 | Realtime | `src/services/realtimeChannel.js` |
 | Domain utils | `src/utils/*` |

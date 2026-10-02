@@ -46,7 +46,7 @@ You can **switch the simulated user** in the header (Priya Sharma, Rahul Mehta, 
 
 - **UI:** React function components and hooks. No TypeScript, no Redux, no router.
 - **State:** `PipelineProvider` keeps UI state (selection, filters, overlays). Deal records live in a ref (`dealsById`) so moving one deal does not clone 50,000 objects. Column order is `dealIdsByStage`.
-- **Fake API:** [`src/api/fakeApi.js`](src/api/fakeApi.js) is an in-memory server. It sleeps 300–1500ms, fails based on the Simulation slider, and stores a `version` on every deal.
+- **Pipeline API:** [`src/api/pipelineApi.js`](src/api/pipelineApi.js) is an in-memory server. It sleeps 300–1500ms, fails based on the Simulation slider, and stores a `version` on every deal.
 - **Virtualization:** `@tanstack/react-virtual` renders only visible cards. 10,000 deals in New Lead does not mean 10,000 DOM nodes.
 - **Drag and drop:** `@dnd-kit` drops onto a **column**, not a pixel-perfect index inside 10,000 cards. Stage can also be changed from the deal drawer or the Table **Move to** menu.
 - **Cross-tab realtime:** [`src/services/realtimeChannel.js`](src/services/realtimeChannel.js) uses `BroadcastChannel("sales-pipeline")` because the assessment specifies that there is no backend. This is **not** a production WebSocket. Incoming events are applied locally and are **not** rebroadcast, so they cannot loop.

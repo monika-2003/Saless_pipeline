@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { fakeApi } from '../api/fakeApi.js'
+import { pipelineApi } from '../api/pipelineApi.js'
 import {
   ACTIVITY_LIMIT,
   BULK_CONCURRENCY,
@@ -101,11 +101,11 @@ export function PipelineProvider({ children }) {
   useEffect(() => {
     const { dealsById, dealIdsByStage } = generatePipeline()
     dealsRef.current = cloneDealsById(dealsById)
-    fakeApi.init(dealsById)
-    fakeApi.setSettings(DEFAULT_SIMULATION)
+    pipelineApi.init(dealsById)
+    pipelineApi.setSettings(DEFAULT_SIMULATION)
     setStageIds(dealIdsByStage)
     setReady(true)
-    return () => fakeApi.shutdown()
+    return () => pipelineApi.shutdown()
   }, [])
 
   const getDeal = useCallback((id) => dealsRef.current[id], [])
@@ -160,7 +160,7 @@ export function PipelineProvider({ children }) {
   const applyIncomingMove = useCallback((payload) => {
     const dealId = payload.dealId || payload.deal?.id
     if (!dealId) return
-    const incomingDeal = payload.deal || fakeApi.getDeal(dealId)
+    const incomingDeal = payload.deal || pipelineApi.getDeal(dealId)
     if (!incomingDeal) return
 
     const local = dealsRef.current[dealId]
@@ -170,7 +170,7 @@ export function PipelineProvider({ children }) {
 
     if (!pendingRef.current[dealId] && local && incomingDeal.version < local.version) return
 
-    fakeApi.applyRemoteDeal(incomingDeal)
+    pipelineApi.applyRemoteDeal(incomingDeal)
 
     if (pendingRef.current[dealId]) {
       setOverlays((current) => {
@@ -292,7 +292,7 @@ export function PipelineProvider({ children }) {
       })
     }
 
-    const result = await fakeApi.moveDeal({
+    const result = await pipelineApi.moveDeal({
       id: dealId,
       toStage,
       clientVersion,
@@ -428,7 +428,7 @@ export function PipelineProvider({ children }) {
       const serverDeal = conflict.serverDeal
       const localStage = dealsRef.current[dealId].stage
       applyDealSnapshot(serverDeal)
-      fakeApi.applyRemoteDeal(serverDeal)
+      pipelineApi.applyRemoteDeal(serverDeal)
       if (localStage !== serverDeal.stage) {
         setStageIds((current) => applyMoveToStageIds(current, dealId, localStage, serverDeal.stage))
       }
@@ -451,7 +451,7 @@ export function PipelineProvider({ children }) {
       return
     }
 
-    const result = await fakeApi.moveDeal({
+    const result = await pipelineApi.moveDeal({
       id: dealId,
       toStage: conflict.localStage,
       clientVersion: conflict.serverDeal.version,
@@ -499,13 +499,13 @@ export function PipelineProvider({ children }) {
           tick()
           return
         }
-        const id = fakeApi.pickRandomOpenDealId()
+        const id = pipelineApi.pickRandomOpenDealId()
         if (id) {
-          const deal = fakeApi.getDeal(id)
-          const toStage = fakeApi.pickRandomStage(deal.stage)
-          const actorName = fakeApi.pickRandomActor(currentUserRef.current.name)
+          const deal = pipelineApi.getDeal(id)
+          const toStage = pipelineApi.pickRandomStage(deal.stage)
+          const actorName = pipelineApi.pickRandomActor(currentUserRef.current.name)
           const actor = actorFromName(actorName)
-          const moved = fakeApi.teammateMove(id, toStage, actorName, { silent: true })
+          const moved = pipelineApi.teammateMove(id, toStage, actorName, { silent: true })
           if (moved) {
             dispatchMove({
               type: ACTIVITY_TYPES.DEAL_MOVED,
@@ -529,7 +529,7 @@ export function PipelineProvider({ children }) {
   const updateSimulation = useCallback((patch) => {
     setSimulation((current) => {
       const next = { ...current, ...patch }
-      fakeApi.setSettings(next)
+      pipelineApi.setSettings(next)
       return next
     })
   }, [])
@@ -558,16 +558,16 @@ export function PipelineProvider({ children }) {
   }, [])
 
   const simulateConflict = useCallback(async () => {
-    const preferred = openedDealId || [...selectedIds][0] || fakeApi.pickRandomOpenDealId()
+    const preferred = openedDealId || [...selectedIds][0] || pipelineApi.pickRandomOpenDealId()
     const deal = dealsRef.current[preferred]
     if (!deal) return
 
     const fromStage = deal.stage
-    let localTarget = fakeApi.pickRandomStage(fromStage)
-    let serverTarget = fakeApi.pickRandomStage(fromStage)
-    while (serverTarget === localTarget) serverTarget = fakeApi.pickRandomStage(fromStage)
+    let localTarget = pipelineApi.pickRandomStage(fromStage)
+    let serverTarget = pipelineApi.pickRandomStage(fromStage)
+    while (serverTarget === localTarget) serverTarget = pipelineApi.pickRandomStage(fromStage)
 
-    const actorName = fakeApi.pickRandomActor(currentUserRef.current.name)
+    const actorName = pipelineApi.pickRandomActor(currentUserRef.current.name)
     const actor = actorFromName(actorName)
     const clientVersion = deal.version
     moveLocal(preferred, localTarget)
@@ -579,11 +579,11 @@ export function PipelineProvider({ children }) {
     })
     openDeal(preferred)
 
-    const moved = fakeApi.teammateMove(preferred, serverTarget, actorName, { silent: true })
-    const result = await fakeApi.moveDeal({ id: preferred, toStage: localTarget, clientVersion })
+    const moved = pipelineApi.teammateMove(preferred, serverTarget, actorName, { silent: true })
+    const result = await pipelineApi.moveDeal({ id: preferred, toStage: localTarget, clientVersion })
     delete pendingRef.current[preferred]
 
-    const serverDeal = result.serverDeal || moved?.deal || fakeApi.getDeal(preferred)
+    const serverDeal = result.serverDeal || moved?.deal || pipelineApi.getDeal(preferred)
     setOverlays((current) => {
       const next = copyOverlays(current)
       delete next.pending[preferred]
@@ -612,12 +612,12 @@ export function PipelineProvider({ children }) {
   }, [moveLocal, openDeal, openedDealId, pushActivity, pushToast, selectedIds])
 
   const simulateFailure = useCallback(() => {
-    const preferred = openedDealId || [...selectedIds][0] || fakeApi.pickRandomOpenDealId()
+    const preferred = openedDealId || [...selectedIds][0] || pipelineApi.pickRandomOpenDealId()
     const deal = dealsRef.current[preferred]
     if (!deal) return
 
     const fromStage = deal.stage
-    const toStage = fakeApi.pickRandomStage(fromStage)
+    const toStage = pipelineApi.pickRandomStage(fromStage)
     const clientVersion = deal.version
     const actor = currentUserRef.current
     moveLocal(preferred, toStage)
@@ -734,7 +734,7 @@ export function PipelineProvider({ children }) {
 
     const failed = await runPool(
       jobs,
-      async (job) => fakeApi.moveDeal({ id: job.id, toStage, clientVersion: job.clientVersion }),
+      async (job) => pipelineApi.moveDeal({ id: job.id, toStage, clientVersion: job.clientVersion }),
       BULK_CONCURRENCY,
       (done, failedCount) => {
         completed = done
@@ -771,7 +771,7 @@ export function PipelineProvider({ children }) {
       }
       for (const job of jobs) {
         if (!failedIds.includes(job.id)) {
-          const fresh = fakeApi.getDeal(job.id)
+          const fresh = pipelineApi.getDeal(job.id)
           if (fresh) {
             applyDealSnapshot(fresh)
             next.saved[job.id] = true

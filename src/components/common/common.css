@@ -300,6 +300,20 @@
   min-height: 0;
 }
 
+.multi-select-all {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.multi-select-all .select-option {
+  font-weight: 600;
+}
+
 .multi-select-menu .select-option {
   justify-content: flex-start;
 }
@@ -316,25 +330,6 @@
 
 .multi-select-menu .select-option.is-selected.is-active,
 .multi-select-menu .select-option.is-selected:hover {
-  background: var(--surface-muted);
-}
-
-.multi-select-clear {
-  flex-shrink: 0;
-  width: 100%;
-  margin-top: 4px;
-  border: 0;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  padding: 8px;
-  border-radius: 0 0 6px 6px;
-}
-
-.multi-select-clear:hover {
-  color: var(--text-primary);
   background: var(--surface-muted);
 }
 
