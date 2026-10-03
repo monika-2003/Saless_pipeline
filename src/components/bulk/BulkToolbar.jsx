@@ -1,8 +1,10 @@
+import { useEffect, useRef } from 'react'
 import { ArrowUpToLine, RefreshCw, X } from 'lucide-react'
 import { STAGES, STAGE_BY_ID } from '../../data/constants.js'
 import { formatCount } from '../../utils/format.js'
 import { canMoveStage } from '../../utils/stageOrder.js'
 import { usePipeline } from '../../store/pipelineContext.js'
+import { useToasts } from '../common/Toast.jsx'
 import { Button } from '../common/Button.jsx'
 import { ProgressBar } from '../common/ProgressBar.jsx'
 import { Dropdown, DropdownItem } from '../common/Dropdown.jsx'
@@ -22,10 +24,14 @@ export function BulkToolbar() {
     retryFailedDeals,
     view,
     listIds,
+    bulkJob,
   } = usePipeline()
+  const { pushToast } = useToasts()
+  const mixedNotifiedRef = useRef(false)
   const count = selectedIds.size
   const ids = [...selectedIds]
   const hasSelection = count > 0
+  const bulkBusy = Boolean(bulkJob?.running)
   const failedIds = view === 'failed' && listIds
     ? listIds
     : Object.keys(overlays.failed)
@@ -33,19 +39,41 @@ export function BulkToolbar() {
   const allFailedSelected = hasFailed && failedIds.every((id) => selectedIds.has(id))
   const selectedFailedIds = ids.filter((id) => overlays.failed[id])
   const selectedFailedCount = selectedFailedIds.length
+  const hasFailedSelected = selectedFailedCount > 0
+  const hasNormalSelected = ids.some((id) => !overlays.failed[id])
+  const mixedFailedSelection = hasFailedSelected && hasNormalSelected
+  const stageActionsLocked = hasFailedSelected || bulkBusy
 
-  const eligibleStages = hasSelection
+  const eligibleStages = hasSelection && !hasFailedSelected
     ? STAGES.filter((stage) =>
         ids.some((id) => {
           const deal = getDeal(id)
-          return deal && canMoveStage(deal.stage, stage.id)
+          return deal && !overlays.pending[id] && canMoveStage(deal.stage, stage.id)
         }),
       )
     : []
-  const canMarkLost = hasSelection && ids.some((id) => {
+  const canMarkWon = hasSelection && !hasFailedSelected && ids.some((id) => {
     const deal = getDeal(id)
-    return deal && canMoveStage(deal.stage, 'lost')
+    return deal && !overlays.pending[id] && canMoveStage(deal.stage, 'won')
   })
+  const canMarkLost = hasSelection && !hasFailedSelected && ids.some((id) => {
+    const deal = getDeal(id)
+    return deal && !overlays.pending[id] && canMoveStage(deal.stage, 'lost')
+  })
+
+  useEffect(() => {
+    if (!mixedFailedSelection) {
+      mixedNotifiedRef.current = false
+      return
+    }
+    if (mixedNotifiedRef.current) return
+    mixedNotifiedRef.current = true
+    pushToast({
+      tone: 'warning',
+      title: 'Resolve failed saves first',
+      message: 'Retry or undo the failed deals before changing stage.',
+    })
+  }, [mixedFailedSelection, pushToast])
 
   return (
     <div className={cx('bulk-toolbar', !hasSelection && 'is-empty')} role="region" aria-label="Bulk actions">
@@ -55,7 +83,7 @@ export function BulkToolbar() {
         ) : (
           <span>Select deals to perform bulk actions</span>
         )}
-        {hasSelection && eligibleStages.length > 0 ? (
+        {hasSelection && eligibleStages.length > 0 && !stageActionsLocked ? (
           <Dropdown trigger={<Button size="sm">Move to…</Button>}>
             {eligibleStages.map((stage) => (
               <DropdownItem key={stage.id} onClick={() => requestBulkMove(ids, stage.id)}>
@@ -69,8 +97,16 @@ export function BulkToolbar() {
         )}
         <Button
           size="sm"
+          variant="success"
+          disabled={!canMarkWon || stageActionsLocked}
+          onClick={() => requestBulkMove(ids, 'won')}
+        >
+          Mark won
+        </Button>
+        <Button
+          size="sm"
           variant="danger"
-          disabled={!canMarkLost}
+          disabled={!canMarkLost || stageActionsLocked}
           onClick={() => requestBulkMove(ids, 'lost')}
         >
           Mark lost
@@ -93,7 +129,7 @@ export function BulkToolbar() {
           </Button>
         ) : null}
         {selectedFailedCount > 0 ? (
-          <Button size="sm" onClick={() => retryFailedDeals(selectedFailedIds)}>
+          <Button size="sm" disabled={bulkBusy} onClick={() => retryFailedDeals(selectedFailedIds)}>
             <RefreshCw size={13} />
             Retry failed ({formatCount(selectedFailedCount)})
           </Button>

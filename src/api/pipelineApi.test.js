@@ -111,6 +111,20 @@ describe('pipelineApi optimistic locking', () => {
     expect(result.deal.stage).toBe('negotiation')
   })
 
+  it('ignores an in-flight move after init replaces the server generation', async () => {
+    pipelineApi.setSettings({ latencyMin: 40, latencyMax: 40 })
+    const pending = pipelineApi.moveDeal({
+      id: 'deal-1',
+      toStage: 'negotiation',
+      clientVersion: 1,
+    })
+    seed([makeDeal({ id: 'deal-1', stage: 'proposal_sent', version: 1 })])
+
+    await expect(pending).resolves.toEqual({ ok: false, error: 'CANCELLED' })
+    expect(pipelineApi.getDeal('deal-1').stage).toBe('proposal_sent')
+    expect(pipelineApi.getDeal('deal-1').version).toBe(1)
+  })
+
   it('returns NOT_FOUND for an unknown deal', async () => {
     const result = await pipelineApi.moveDeal({
       id: 'missing',

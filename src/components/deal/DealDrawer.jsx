@@ -81,6 +81,7 @@ export function DealDrawer() {
         <Select
           label="Move stage"
           value={deal.stage}
+          disabled={Boolean(pending)}
           onChange={(stage) => requestMove(deal.id, stage)}
           options={[
             { value: deal.stage, label: STAGE_BY_ID[deal.stage].label, color: STAGE_BY_ID[deal.stage].color },
@@ -93,10 +94,10 @@ export function DealDrawer() {
         />
         <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>
           {canMoveStage(deal.stage, 'won') ? (
-            <Button variant="primary" onClick={() => requestMove(deal.id, 'won')}>Mark won</Button>
+            <Button variant="success" disabled={Boolean(pending)} onClick={() => requestMove(deal.id, 'won')}>Mark won</Button>
           ) : null}
           {canMoveStage(deal.stage, 'lost') ? (
-            <Button variant="danger" onClick={() => requestMove(deal.id, 'lost')}>Mark lost</Button>
+            <Button variant="danger" disabled={Boolean(pending)} onClick={() => requestMove(deal.id, 'lost')}>Mark lost</Button>
           ) : null}
         </div>
       </div>

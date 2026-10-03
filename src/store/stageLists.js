@@ -24,6 +24,56 @@ export function applyBulkMoveToStageIds(stageIds, ids, toStage) {
   return next
 }
 
+export function applyGroupedStageMoves(stageIds, destByStage) {
+  if (!stageIds || !destByStage) return stageIds
+  const destById = new Map()
+  for (const stage of STAGES) {
+    const ids = destByStage[stage.id]
+    if (!ids?.length) continue
+    for (const id of ids) destById.set(id, stage.id)
+  }
+  if (!destById.size) return stageIds
+
+  let misplaced = 0
+  let seen = 0
+  for (const stage of STAGES) {
+    for (const id of stageIds[stage.id] || []) {
+      const dest = destById.get(id)
+      if (!dest) continue
+      seen += 1
+      if (dest !== stage.id) misplaced += 1
+    }
+  }
+  if (misplaced === 0 && seen === destById.size) return stageIds
+
+  const next = {}
+  for (const stage of STAGES) {
+    next[stage.id] = (stageIds[stage.id] || []).filter((id) => {
+      const dest = destById.get(id)
+      return !dest || dest === stage.id
+    })
+  }
+  for (const stage of STAGES) {
+    const ids = destByStage[stage.id]
+    if (!ids?.length) continue
+    const existing = new Set(next[stage.id])
+    const prepend = ids.filter((id) => !existing.has(id))
+    if (prepend.length) next[stage.id] = prepend.concat(next[stage.id])
+  }
+  return next
+}
+
+export function groupIdsByStage(ids, getStage) {
+  const groups = Object.create(null)
+  for (const id of ids) {
+    const stage = getStage(id)
+    if (!stage) continue
+    const list = groups[stage] || (groups[stage] = [])
+    list.push(id)
+  }
+  return groups
+}
+
 export function placeDealInStage(stageIds, dealId, toStage) {
   if (!stageIds || !dealId || !toStage) return stageIds
   const alreadyThere = (stageIds[toStage] || []).includes(dealId)

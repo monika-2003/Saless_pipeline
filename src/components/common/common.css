@@ -68,6 +68,16 @@
   background: color-mix(in srgb, var(--danger) 16%, var(--surface));
 }
 
+.btn-success {
+  background: var(--success-soft);
+  border-color: transparent;
+  color: var(--success);
+}
+
+.btn-success:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--success) 16%, var(--surface));
+}
+
 .icon-btn {
   width: 32px;
   height: 32px;
@@ -207,6 +217,15 @@
   gap: 8px;
   text-align: left;
   cursor: pointer;
+}
+
+.select-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.select-input:disabled:hover {
+  border-color: var(--border);
 }
 
 .select-input span {
@@ -404,6 +423,15 @@
 .check-wrap input:focus-visible + .check-box {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+.check-wrap.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.check-wrap.is-disabled:hover .check-box {
+  border-color: var(--border-strong);
 }
 
 .toggle {

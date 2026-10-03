@@ -98,6 +98,10 @@
   padding-bottom: 6px;
 }
 
+.virtual-item.is-failed {
+  padding-bottom: 16px;
+}
+
 [data-theme='dark'] .stage-column {
   background: color-mix(in srgb, var(--stage, var(--text-muted)) 16%, var(--surface));
 }

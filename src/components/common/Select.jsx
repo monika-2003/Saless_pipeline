@@ -9,6 +9,7 @@ export function Select({
   onChange,
   options = [],
   placeholder = 'Select',
+  disabled = false,
 }) {
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(-1)
@@ -78,8 +79,13 @@ export function Select({
         aria-expanded={open}
         aria-labelledby={label ? `${listId}-label` : undefined}
         aria-controls={listId}
-        onClick={() => setOpen((current) => !current)}
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) return
+          setOpen((current) => !current)
+        }}
         onKeyDown={(event) => {
+          if (disabled) return
           if (event.key === 'ArrowDown') {
             event.preventDefault()
             setOpen(true)

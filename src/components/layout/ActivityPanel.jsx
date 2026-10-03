@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { STAGE_BY_ID } from '../../data/constants.js'
+import { useFocusTrap } from '../../hooks/useFocusTrap.js'
 import { usePipeline } from '../../store/pipelineContext.js'
 import { formatActivityHeadline, groupActivityEvents } from '../../utils/activity.js'
 import { Avatar } from '../common/Avatar.jsx'
@@ -11,27 +12,21 @@ import { cx } from '../../utils/cx.js'
 export function ActivityPanel() {
   const { activityOpen, setActivityOpen, activityEvents, openedDealId, openDeal } = usePipeline()
   const panelRef = useRef(null)
+  useFocusTrap(panelRef, {
+    enabled: activityOpen,
+    onClose: () => setActivityOpen(false),
+  })
 
   useEffect(() => {
     if (!activityOpen) return undefined
-    function onKey(event) {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      setActivityOpen(false)
-    }
     function onPointerDown(event) {
       if (event.target.closest('[data-activity-trigger]')) return
       if (panelRef.current && !panelRef.current.contains(event.target)) {
         setActivityOpen(false)
       }
     }
-    document.addEventListener('keydown', onKey, true)
     document.addEventListener('mousedown', onPointerDown)
-    return () => {
-      document.removeEventListener('keydown', onKey, true)
-      document.removeEventListener('mousedown', onPointerDown)
-    }
+    return () => document.removeEventListener('mousedown', onPointerDown)
   }, [activityOpen, setActivityOpen])
 
   if (!activityOpen) return null
@@ -53,7 +48,7 @@ export function ActivityPanel() {
             Recent teammate and save events for this session.
           </p>
         </div>
-        <IconButton label="Close activity" onClick={() => setActivityOpen(false)}>
+        <IconButton label="Close activity" data-autofocus onClick={() => setActivityOpen(false)}>
           <X size={14} />
         </IconButton>
       </div>

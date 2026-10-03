@@ -13,6 +13,7 @@ import { SimulationPanel } from './components/simulation/SimulationPanel.jsx'
 import { Skeleton } from './components/common/Skeleton.jsx'
 import { useFilterChromeScroll } from './hooks/useFilterChromeScroll.js'
 import { usePipeline } from './store/pipelineContext.js'
+import { overlayDepth } from './utils/overlayStack.js'
 import { STAGE_BY_ID, STAGES } from './data/constants.js'
 import { ACTIVITY_TYPES, formatActivityHeadline } from './utils/activity.js'
 import { cx } from './utils/cx.js'
@@ -94,7 +95,8 @@ function AppShell() {
       ref={shellRef}
       className={cx('app-shell', tableLayout && 'is-table-layout')}
       onKeyDown={(event) => {
-        if (event.key === 'Escape' && !openedDealId) clearSelection()
+        if (event.key !== 'Escape' || openedDealId || overlayDepth() > 0) return
+        clearSelection()
       }}
     >
       <div className="app-sticky-header" ref={headerRef}>
@@ -109,7 +111,7 @@ function AppShell() {
         <BulkToolbar />
         <BulkProgress />
       </div>
-      <main className="app-main">
+      <main id="pipeline-view-panel" className="app-main" role="tabpanel" aria-labelledby={`view-tab-${view}`}>
         {view === 'attention' ? (
           <AttentionTable />
         ) : view === 'failed' ? (

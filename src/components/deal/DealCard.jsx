@@ -23,16 +23,16 @@ function DealCardComponent({
   onUseLatest,
   disableDrag = false,
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: disableDrag ? `overlay-${deal.id}` : deal.id,
-    data: { type: 'deal', stageId: deal.stage },
-    disabled: disableDrag,
-  })
-
   const pending = overlay?.pending
   const failed = overlay?.failed
   const conflict = overlay?.conflict
   const saved = overlay?.saved
+  const locked = Boolean(pending)
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: disableDrag ? `overlay-${deal.id}` : deal.id,
+    data: { type: 'deal', stageId: deal.stage },
+    disabled: disableDrag || locked,
+  })
 
   return (
     <article
@@ -46,23 +46,32 @@ function DealCardComponent({
         focused && 'is-focused',
         failed && 'is-failed',
         conflict && 'is-conflict',
+        locked && 'is-saving',
       )}
       style={{ opacity: isDragging ? 0.35 : 1 }}
       tabIndex={focused ? 0 : -1}
       aria-selected={selected}
+      aria-busy={locked || undefined}
       data-deal-id={deal.id}
       onClick={() => onOpen(deal.id)}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') onOpen(deal.id)
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          event.stopPropagation()
+          onOpen(deal.id)
+        }
         if (event.key === ' ') {
           event.preventDefault()
-          onToggleSelect(deal.id, event)
+          event.stopPropagation()
+          if (!locked) onToggleSelect(deal.id, event)
         }
       }}
     >
       <div className="deal-top">
         <Checkbox
           checked={selected}
+          disabled={locked}
+          tabIndex={-1}
           onChange={(_, event) => onToggleSelect(deal.id, event)}
         />
         <div className="deal-main">
@@ -107,17 +116,20 @@ function DealCardComponent({
           <div className="status-actions">
             <Button
               size="sm"
+              className="status-action-btn"
               onClick={(event) => {
                 event.stopPropagation()
                 onRetry(deal.id)
               }}
             >
-              <RefreshCw size={12} /> Retry
+              <RefreshCw size={12} />
+              Retry
             </Button>
             {onUndo ? (
               <Button
                 size="sm"
-                variant="ghost"
+                variant="secondary"
+                className="status-action-btn"
                 onClick={(event) => {
                   event.stopPropagation()
                   onUndo(deal.id)

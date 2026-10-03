@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { STAGES, TABLE_PAGE_SIZE, TABLE_PAGE_SIZES } from '../../data/constants.js'
+import { useRovingTabs } from '../../hooks/useRovingTabs.js'
 import { usePipeline } from '../../store/pipelineContext.js'
 import { pinSelectedFirst } from '../../utils/selection.js'
+import { cx } from '../../utils/cx.js'
 import { formatCloseRelative, formatCount, formatMoney } from '../../utils/format.js'
 import { Badge } from '../common/Badge.jsx'
 import { Button } from '../common/Button.jsx'
@@ -40,6 +42,11 @@ export function DealTable({
   const [tabId, setTabId] = useState(defaultTabId || resolvedTabs[0]?.id)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(TABLE_PAGE_SIZE)
+  const [focusedRowId, setFocusedRowId] = useState(null)
+  const tablistRef = useRef(null)
+  const tableRef = useRef(null)
+  const tabIds = resolvedTabs.map((tab) => tab.id)
+  const { onKeyDown: onTabKeyDown, tabIndexFor } = useRovingTabs(tablistRef, tabIds, tabId, setTabId)
   const activeTab = resolvedTabs.find((tab) => tab.id === tabId) || resolvedTabs[0]
   const rawIds = resolvedIdsByTab[activeTab?.id] || []
   const ids = useMemo(
@@ -67,22 +74,39 @@ export function DealTable({
     const start = (safePage - 1) * pageSize
     return ids.slice(start, start + pageSize)
   }, [ids, safePage, pageSize])
+  const activeRowId = pageIds.includes(focusedRowId) ? focusedRowId : pageIds[0] || null
+
+  useEffect(() => {
+    if (!activeRowId || !tableRef.current) return
+    if (!tableRef.current.contains(document.activeElement)) return
+    const row = tableRef.current.querySelector(`tr[data-deal-id="${activeRowId}"]`)
+    row?.focus({ preventScroll: true })
+  }, [activeRowId])
 
   const selectedOnPage = pageIds.filter((id) => selectedIds.has(id)).length
   const allPageSelected = pageIds.length > 0 && selectedOnPage === pageIds.length
+  const stageHasSaving = rawIds.some((id) => overlays.pending[id])
   const startIndex = ids.length === 0 ? 0 : (safePage - 1) * pageSize + 1
   const endIndex = Math.min(ids.length, safePage * pageSize)
   const colCount = getWhy ? 11 : 10
 
   return (
     <div className="deal-table-wrap">
-      <div className="table-stage-tabs" role="tablist" aria-label={tablistLabel}>
+      <div
+        ref={tablistRef}
+        className="table-stage-tabs"
+        role="tablist"
+        aria-label={tablistLabel}
+        onKeyDown={onTabKeyDown}
+      >
         {resolvedTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             role="tab"
+            data-tab-id={tab.id}
             aria-selected={activeTab?.id === tab.id}
+            tabIndex={tabIndexFor(tab.id)}
             className={activeTab?.id === tab.id ? 'table-stage-tab is-active' : 'table-stage-tab'}
             style={{ '--stage': tab.color }}
             onClick={(event) => {
@@ -109,7 +133,7 @@ export function DealTable({
       </div>
 
       <div className="deal-table-scroll">
-        <table className="deal-table">
+        <table className="deal-table" ref={tableRef}>
           <thead>
             <tr>
               <th className="col-check">
@@ -117,6 +141,7 @@ export function DealTable({
                   aria-label={`Select visible ${activeTab?.label || ''} deals`}
                   checked={allPageSelected}
                   indeterminate={selectedOnPage > 0 && !allPageSelected}
+                  disabled={stageHasSaving}
                   onChange={(checked) => {
                     if (checked) selectMany([...selectedIds, ...pageIds])
                     else {
@@ -157,19 +182,48 @@ export function DealTable({
               return (
                 <tr
                   key={id}
-                  className={selectedIds.has(id) ? 'is-selected' : undefined}
+                  data-deal-id={id}
+                  className={cx(selectedIds.has(id) && 'is-selected', pending && 'is-saving')}
                   onClick={() => openDeal(id)}
-                  tabIndex={0}
+                  tabIndex={id === activeRowId ? 0 : -1}
+                  aria-busy={pending ? true : undefined}
+                  onFocus={() => setFocusedRowId(id)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter') openDeal(id)
+                    if (event.target !== event.currentTarget && event.target.closest('button, input')) {
+                      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        /* keep moving rows even from row controls */
+                      } else {
+                        return
+                      }
+                    }
+                    const index = pageIds.indexOf(id)
+                    if (event.key === 'ArrowDown') {
+                      event.preventDefault()
+                      const next = pageIds[Math.min(pageIds.length - 1, index + 1)]
+                      if (next) setFocusedRowId(next)
+                    }
+                    if (event.key === 'ArrowUp') {
+                      event.preventDefault()
+                      const next = pageIds[Math.max(0, index - 1)]
+                      if (next) setFocusedRowId(next)
+                    }
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      openDeal(id)
+                    }
                     if (event.key === ' ') {
                       event.preventDefault()
-                      toggleSelect(id)
+                      if (!pending) toggleSelect(id)
                     }
                   }}
                 >
                   <td className="col-check" onClick={(event) => event.stopPropagation()}>
-                    <Checkbox checked={selectedIds.has(id)} onChange={() => toggleSelect(id)} />
+                    <Checkbox
+                      checked={selectedIds.has(id)}
+                      disabled={Boolean(pending)}
+                      tabIndex={-1}
+                      onChange={() => toggleSelect(id)}
+                    />
                   </td>
                   <td className="col-company">
                     <strong>{deal.company}</strong>
@@ -188,16 +242,21 @@ export function DealTable({
                     {!pending && !saved && !failed && !conflict ? '—' : null}
                   </td>
                   <td className="col-move" onClick={(event) => event.stopPropagation()}>
-                    <DealMoveMenu deal={deal} onMove={requestMove} />
+                    <DealMoveMenu
+                      deal={deal}
+                      onMove={requestMove}
+                      disabled={Boolean(pending)}
+                      tabIndex={id === activeRowId ? 0 : -1}
+                    />
                   </td>
                   <td className="col-actions" onClick={(event) => event.stopPropagation()}>
                     {failed ? (
                       <div className="table-failed-actions">
-                        <Button size="sm" onClick={() => retryDeal(id)}>
+                        <Button size="sm" tabIndex={id === activeRowId ? 0 : -1} onClick={() => retryDeal(id)}>
                           <RefreshCw size={13} />
                           Retry
                         </Button>
-                        <Button size="sm" variant="secondary" onClick={() => discardFailed(id)}>
+                        <Button size="sm" variant="secondary" tabIndex={id === activeRowId ? 0 : -1} onClick={() => discardFailed(id)}>
                           Undo
                         </Button>
                       </div>

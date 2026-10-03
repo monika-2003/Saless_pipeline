@@ -33,27 +33,20 @@ import {
   persistSeedNow,
   resetPersistedDeals,
 } from '../utils/pipelinePersist.js'
+import { getAttentionReason } from '../utils/attention.js'
 import { runPool } from '../utils/concurrency.js'
 import {
   dealMatchesFilters,
   dealMatchesSearch,
   createEmptyFilters,
-  isNeedsAttention,
   matchesView,
 } from '../utils/filters.js'
 import { canMoveStage } from '../utils/stageOrder.js'
 import { PipelineContext } from './pipelineContext.js'
-import {
-  applyBulkMoveToStageIds,
-  applyMoveToStageIds,
-  cloneStageIds,
-  createVisibleIdSet,
-  emptyOverlays,
-  intersectSelectedIds,
-  placeDealInStage,
-} from './stageLists.js'
+import * as stageLists from './stageLists.js'
 
 const USER_STORAGE_KEY = 'sales-pipeline-current-user'
+const NO_OVERLAYS = stageLists.emptyOverlays()
 
 function copyOverlays(overlays) {
   return {
@@ -82,6 +75,8 @@ export function PipelineProvider({ children }) {
   const dealsRef = useRef(Object.create(null))
   const pendingRef = useRef(Object.create(null))
   const lastUndoRef = useRef(null)
+  const bulkRunningRef = useRef(false)
+  const bulkJobIdRef = useRef(0)
   const savedTimersRef = useRef(Object.create(null))
   const currentUserRef = useRef(readStoredUser())
   const realtimeRef = useRef(null)
@@ -89,7 +84,7 @@ export function PipelineProvider({ children }) {
 
   const [ready, setReady] = useState(false)
   const [stageIds, setStageIds] = useState(null)
-  const [overlays, setOverlays] = useState({ ...emptyOverlays(), saved: Object.create(null) })
+  const [overlays, setOverlays] = useState({ ...stageLists.emptyOverlays(), saved: Object.create(null) })
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [pinSelected, setPinSelected] = useState(false)
   const [view, setView] = useState('all')
@@ -125,7 +120,7 @@ export function PipelineProvider({ children }) {
     dealsRef.current = dealsById
     pipelineApi.init(dealsById)
     pipelineApi.setSettings(DEFAULT_SIMULATION)
-    setStageIds(cloneStageIds(dealIdsByStage))
+    setStageIds(stageLists.cloneStageIds(dealIdsByStage))
     setReady(true)
     const persistOnHide = () => flushDealChanges()
     window.addEventListener('pagehide', persistOnHide)
@@ -148,14 +143,19 @@ export function PipelineProvider({ children }) {
     return event
   }, [])
 
-  const applyDealSnapshot = useCallback((deal) => {
+  const writeDealSnapshot = useCallback((deal) => {
     const previous = dealsRef.current[deal.id]
     dealsRef.current[deal.id] = { ...previous, ...deal }
     const next = dealsRef.current[deal.id]
-    if (!next?.stage) return
-    persistDealChange(next)
-    setStageIds((current) => placeDealInStage(current, deal.id, next.stage))
+    if (next) persistDealChange(next)
+    return next
   }, [])
+
+  const applyDealSnapshot = useCallback((deal) => {
+    const next = writeDealSnapshot(deal)
+    if (!next?.stage) return
+    setStageIds((current) => stageLists.placeDealInStage(current, deal.id, next.stage))
+  }, [writeDealSnapshot])
 
   const markSaved = useCallback((dealId) => {
     window.clearTimeout(savedTimersRef.current[dealId])
@@ -177,12 +177,31 @@ export function PipelineProvider({ children }) {
     }, 1800)
   }, [])
 
+  const scheduleClearSaved = useCallback((dealIds) => {
+    if (!dealIds.length) return
+    const batchKey = `saved-batch-${dealIds[0]}`
+    window.clearTimeout(savedTimersRef.current[batchKey])
+    savedTimersRef.current[batchKey] = window.setTimeout(() => {
+      const clear = new Set(dealIds)
+      setOverlays((current) => {
+        let changed = false
+        const next = copyOverlays(current)
+        for (const dealId of clear) {
+          if (!next.saved[dealId]) continue
+          delete next.saved[dealId]
+          changed = true
+        }
+        return changed ? next : current
+      })
+    }, 1800)
+  }, [])
+
   const moveLocal = useCallback((dealId, toStage) => {
     const deal = dealsRef.current[dealId]
     if (!deal || deal.stage === toStage) return deal?.stage
     const fromStage = deal.stage
     deal.stage = toStage
-    setStageIds((current) => applyMoveToStageIds(current, dealId, fromStage, toStage))
+    setStageIds((current) => stageLists.applyMoveToStageIds(current, dealId, fromStage, toStage))
     return fromStage
   }, [])
 
@@ -234,9 +253,9 @@ export function PipelineProvider({ children }) {
 
     applyDealSnapshot(incomingDeal)
     if (local && local.stage !== incomingDeal.stage) {
-      setStageIds((current) => applyMoveToStageIds(current, dealId, local.stage, incomingDeal.stage))
+      setStageIds((current) => stageLists.applyMoveToStageIds(current, dealId, local.stage, incomingDeal.stage))
     } else if (!local && fromStage && toStage && fromStage !== toStage) {
-      setStageIds((current) => applyMoveToStageIds(current, dealId, fromStage, toStage))
+      setStageIds((current) => stageLists.applyMoveToStageIds(current, dealId, fromStage, toStage))
     }
 
     pushActivity({
@@ -280,6 +299,7 @@ export function PipelineProvider({ children }) {
   const moveDeal = useCallback(async (dealId, toStage, options = {}) => {
     const deal = dealsRef.current[dealId]
     if (!deal) return
+    if (pendingRef.current[dealId]) return
     const alreadyThere = deal.stage === toStage
     if (alreadyThere && !options.resubmit) return
 
@@ -465,7 +485,7 @@ export function PipelineProvider({ children }) {
       applyDealSnapshot(serverDeal)
       pipelineApi.applyRemoteDeal(serverDeal)
       if (localStage !== serverDeal.stage) {
-        setStageIds((current) => applyMoveToStageIds(current, dealId, localStage, serverDeal.stage))
+        setStageIds((current) => stageLists.applyMoveToStageIds(current, dealId, localStage, serverDeal.stage))
       }
       setOverlays((current) => {
         const next = copyOverlays(current)
@@ -525,7 +545,7 @@ export function PipelineProvider({ children }) {
   }, [moveDeal])
 
   useEffect(() => {
-    if (!ready || !simulation.teammateEnabled) return undefined
+    if (!ready || !simulation.teammateEnabled || bulkJob?.running) return undefined
     let timer
     const tick = () => {
       const delay = 5500 + Math.random() * 4000
@@ -534,8 +554,12 @@ export function PipelineProvider({ children }) {
           tick()
           return
         }
+        if (bulkRunningRef.current) {
+          tick()
+          return
+        }
         const id = pipelineApi.pickRandomOpenDealId()
-        if (id) {
+        if (id && !pendingRef.current[id]) {
           const deal = pipelineApi.getDeal(id)
           const toStage = pipelineApi.pickRandomStage(deal.stage)
           if (!toStage) {
@@ -563,7 +587,7 @@ export function PipelineProvider({ children }) {
     }
     tick()
     return () => window.clearTimeout(timer)
-  }, [dispatchMove, ready, simulation.teammateEnabled])
+  }, [bulkJob?.running, dispatchMove, ready, simulation.teammateEnabled])
 
   const updateSimulation = useCallback((patch) => {
     setSimulation((current) => {
@@ -583,6 +607,8 @@ export function PipelineProvider({ children }) {
     })
     pendingRef.current = Object.create(null)
     lastUndoRef.current = null
+    bulkRunningRef.current = false
+    bulkJobIdRef.current += 1
 
     const seedNow = loadSeedNow() ?? Date.now()
     persistSeedNow(seedNow)
@@ -591,8 +617,8 @@ export function PipelineProvider({ children }) {
     dealsRef.current = dealsById
     pipelineApi.init(dealsById)
     pipelineApi.setSettings(simulation)
-    setStageIds(cloneStageIds(generated.dealIdsByStage))
-    setOverlays({ ...emptyOverlays(), saved: Object.create(null) })
+    setStageIds(stageLists.cloneStageIds(generated.dealIdsByStage))
+    setOverlays({ ...stageLists.emptyOverlays(), saved: Object.create(null) })
     setSelectedIds(new Set())
     setPinSelected(false)
     setBulkJob(null)
@@ -704,6 +730,7 @@ export function PipelineProvider({ children }) {
   }, [pushToast, resolveSimulationIds])
 
   const toggleSelect = useCallback((dealId, options = {}) => {
+    if (pendingRef.current[dealId]) return
     setPinSelected(false)
     setSelectedIds((current) => {
       const next = options.replace ? new Set() : new Set(current)
@@ -726,7 +753,9 @@ export function PipelineProvider({ children }) {
     setPinSelected(false)
     setSelectedIds((current) => {
       const next = new Set(current)
-      for (let i = start; i <= end; i += 1) next.add(ids[i])
+      for (let i = start; i <= end; i += 1) {
+        if (!pendingRef.current[ids[i]]) next.add(ids[i])
+      }
       return next
     })
   }, [])
@@ -746,10 +775,12 @@ export function PipelineProvider({ children }) {
   }, [])
 
   const bulkMove = useCallback(async (ids, toStage, options = {}) => {
+    if (bulkRunningRef.current) return
     const jobs = []
     for (const id of ids) {
       const deal = dealsRef.current[id]
       if (!deal) continue
+      if (pendingRef.current[id]) continue
       const sameStage = deal.stage === toStage
       if (sameStage && !options.resubmit) continue
       if (!sameStage && !canMoveStage(deal.stage, toStage) && !options.allowBackward) continue
@@ -762,6 +793,10 @@ export function PipelineProvider({ children }) {
       })
     }
     if (jobs.length === 0) return
+
+    const jobId = ++bulkJobIdRef.current
+    bulkRunningRef.current = true
+    const isCurrentBulk = () => bulkJobIdRef.current === jobId
 
     setOverlays((current) => {
       const next = copyOverlays(current)
@@ -777,7 +812,7 @@ export function PipelineProvider({ children }) {
       const deal = dealsRef.current[job.id]
       if (deal && deal.stage !== toStage) deal.stage = toStage
     })
-    setStageIds((current) => applyBulkMoveToStageIds(current, jobs.map((job) => job.id), toStage))
+    setStageIds((current) => stageLists.applyBulkMoveToStageIds(current, jobs.map((job) => job.id), toStage))
 
     const actor = currentUserRef.current
     pushActivity({
@@ -787,109 +822,204 @@ export function PipelineProvider({ children }) {
       metadata: { total: jobs.length, toStage },
     })
 
-    setBulkJob({ toStage, total: jobs.length, completed: 0, failedCount: 0, running: true, failedIds: [] })
+    setBulkJob({
+      id: jobId,
+      toStage,
+      total: jobs.length,
+      completed: 0,
+      failedCount: 0,
+      running: true,
+      failedIds: [],
+    })
     let lastUi = 0
     let completed = 0
+    const liveFailures = []
+    const appliedFailedIds = []
 
-    const failed = await runPool(
-      jobs,
-      async (job) => pipelineApi.moveDeal({
-        id: job.id,
-        toStage,
-        clientVersion: job.clientVersion,
-        excludeActor: currentUserRef.current.name,
-      }),
-      BULK_CONCURRENCY,
-      (done, failedCount) => {
-        completed = done
-        const now = Date.now()
-        if (now - lastUi > 80 || done === jobs.length) {
-          lastUi = now
-          setBulkJob((current) => current && { ...current, completed: done, failedCount })
-        }
-      },
-    )
-
-    const failedIds = failed.map((entry) => entry.item.id)
-    const actorNow = currentUserRef.current
-    if (failedIds.length) {
-      setStageIds((current) => {
-        let next = current
-        for (const job of jobs) {
-          if (!failedIds.includes(job.id)) continue
-          const deal = dealsRef.current[job.id]
-          if (deal && deal.stage !== job.fromStage) deal.stage = job.fromStage
-          next = placeDealInStage(next, job.id, job.fromStage)
+    function flushLiveFailures() {
+      if (!isCurrentBulk() || liveFailures.length === 0) return
+      const batch = liveFailures.splice(0)
+      const rollbackByStage = Object.create(null)
+      for (const { job } of batch) {
+        const deal = dealsRef.current[job.id]
+        if (deal && deal.stage !== job.fromStage) deal.stage = job.fromStage
+        delete pendingRef.current[job.id]
+        appliedFailedIds.push(job.id)
+        const group = rollbackByStage[job.fromStage] || (rollbackByStage[job.fromStage] = [])
+        group.push(job.id)
+      }
+      setStageIds((current) => stageLists.applyGroupedStageMoves(current, rollbackByStage))
+      setOverlays((current) => {
+        const next = copyOverlays(current)
+        for (const { job, result } of batch) {
+          delete next.pending[job.id]
+          delete next.saved[job.id]
+          if (result?.error === 'CONFLICT') {
+            const other = actorFromName(payloadActorName(
+              result.serverDeal,
+              result.actorName,
+            ))
+            next.conflicts[job.id] = {
+              localStage: toStage,
+              fromStage: job.fromStage,
+              serverDeal: result.serverDeal,
+              actorName: other.name,
+              actorId: other.id,
+            }
+            delete next.failed[job.id]
+          } else {
+            next.failed[job.id] = { fromStage: job.fromStage, toStage, clientVersion: job.clientVersion }
+            delete next.conflicts[job.id]
+          }
         }
         return next
       })
     }
-    setOverlays((current) => {
-      const next = copyOverlays(current)
-      for (const job of jobs) {
-        delete next.pending[job.id]
-        delete pendingRef.current[job.id]
-      }
-      for (const entry of failed) {
-        const job = entry.item
-        if (entry.result?.error === 'CONFLICT') {
-          const other = actorFromName(payloadActorName(
-            entry.result.serverDeal,
-            entry.result.actorName,
-          ))
-          next.conflicts[job.id] = {
-            localStage: toStage,
-            fromStage: job.fromStage,
-            serverDeal: entry.result.serverDeal,
-            actorName: other.name,
-            actorId: other.id,
+
+    try {
+      const failed = await runPool(
+        jobs,
+        async (job) => {
+          if (!isCurrentBulk()) return { ok: false, error: 'CANCELLED' }
+          const result = await pipelineApi.moveDeal({
+            id: job.id,
+            toStage,
+            clientVersion: job.clientVersion,
+            excludeActor: currentUserRef.current.name,
+          })
+          if (!isCurrentBulk()) return result
+          if (result && result.ok === false && result.error !== 'CANCELLED') {
+            liveFailures.push({ job, result })
           }
-        } else {
-          next.failed[job.id] = { fromStage: job.fromStage, toStage, clientVersion: job.clientVersion }
-        }
+          return result
+        },
+        BULK_CONCURRENCY,
+        (done, failedCount) => {
+          if (!isCurrentBulk()) return
+          completed = done
+          const now = Date.now()
+          if (now - lastUi > 80 || done === jobs.length) {
+            lastUi = now
+            flushLiveFailures()
+            setBulkJob((current) => (
+              current?.id === jobId
+                ? { ...current, completed: done, failedCount, failedIds: [...appliedFailedIds] }
+                : current
+            ))
+          }
+        },
+      )
+
+      if (!isCurrentBulk()) return
+      flushLiveFailures()
+
+      const failedSet = new Set()
+      const failedIds = []
+      const rollbackByStage = Object.create(null)
+      for (const entry of failed) {
+        if (entry.result?.error === 'CANCELLED') continue
+        const job = entry.item
+        failedSet.add(job.id)
+        failedIds.push(job.id)
+        const group = rollbackByStage[job.fromStage] || (rollbackByStage[job.fromStage] = [])
+        group.push(job.id)
       }
-      return next
-    })
+      const actorNow = currentUserRef.current
+      if (failedSet.size) {
+        setStageIds((current) => {
+          for (const job of jobs) {
+            if (!failedSet.has(job.id)) continue
+            const deal = dealsRef.current[job.id]
+            if (deal && deal.stage !== job.fromStage) deal.stage = job.fromStage
+          }
+          return stageLists.applyGroupedStageMoves(current, rollbackByStage)
+        })
+      }
 
-    for (const job of jobs) {
-      if (failedIds.includes(job.id)) continue
-      const fresh = pipelineApi.getDeal(job.id)
-      if (fresh) applyDealSnapshot(fresh)
-      markSaved(job.id)
+      const succeededIds = []
+      for (const job of jobs) {
+        delete pendingRef.current[job.id]
+        if (failedSet.has(job.id)) continue
+        const fresh = pipelineApi.getDeal(job.id)
+        if (fresh) writeDealSnapshot(fresh)
+        succeededIds.push(job.id)
+      }
+
+      setOverlays((current) => {
+        const next = copyOverlays(current)
+        for (const job of jobs) {
+          delete next.pending[job.id]
+        }
+        for (const entry of failed) {
+          const job = entry.item
+          delete next.saved[job.id]
+          if (entry.result?.error === 'CONFLICT') {
+            const other = actorFromName(payloadActorName(
+              entry.result.serverDeal,
+              entry.result.actorName,
+            ))
+            next.conflicts[job.id] = {
+              localStage: toStage,
+              fromStage: job.fromStage,
+              serverDeal: entry.result.serverDeal,
+              actorName: other.name,
+              actorId: other.id,
+            }
+            delete next.failed[job.id]
+          } else {
+            next.failed[job.id] = { fromStage: job.fromStage, toStage, clientVersion: job.clientVersion }
+            delete next.conflicts[job.id]
+          }
+        }
+        for (const id of succeededIds) {
+          next.saved[id] = true
+          delete next.failed[id]
+          delete next.conflicts[id]
+        }
+        return next
+      })
+      scheduleClearSaved(succeededIds)
+
+      setBulkJob((current) => (
+        current?.id === jobId
+          ? {
+              id: jobId,
+              toStage,
+              total: jobs.length,
+              completed,
+              failedCount: failed.length,
+              running: false,
+              failedIds,
+            }
+          : current
+      ))
+      clearSelection()
+      const ok = jobs.length - failed.length
+      pushActivity({
+        type: failed.length
+          ? ACTIVITY_TYPES.BULK_OPERATION_PARTIAL_FAILURE
+          : ACTIVITY_TYPES.BULK_OPERATION_COMPLETED,
+        actorId: actorNow.id,
+        actorName: actorNow.name,
+        metadata: { total: jobs.length, succeeded: ok, failed: failed.length, toStage },
+      })
+      pushToast({
+        tone: failed.length ? 'warning' : 'success',
+        title: failed.length
+          ? 'Bulk operation completed with some failures'
+          : `${ok} deal${ok === 1 ? '' : 's'} moved successfully`,
+        message: failed.length
+          ? `${ok.toLocaleString('en-IN')} succeeded · ${failed.length} failed`
+          : STAGE_BY_ID[toStage].label,
+      })
+    } finally {
+      if (bulkJobIdRef.current === jobId) bulkRunningRef.current = false
     }
-
-    setBulkJob({
-      toStage,
-      total: jobs.length,
-      completed,
-      failedCount: failed.length,
-      running: false,
-      failedIds,
-    })
-    clearSelection()
-    const ok = jobs.length - failed.length
-    pushActivity({
-      type: failed.length
-        ? ACTIVITY_TYPES.BULK_OPERATION_PARTIAL_FAILURE
-        : ACTIVITY_TYPES.BULK_OPERATION_COMPLETED,
-      actorId: actorNow.id,
-      actorName: actorNow.name,
-      metadata: { total: jobs.length, succeeded: ok, failed: failed.length, toStage },
-    })
-    pushToast({
-      tone: failed.length ? 'warning' : 'success',
-      title: failed.length
-        ? 'Bulk operation completed with some failures'
-        : `${ok} deal${ok === 1 ? '' : 's'} moved successfully`,
-      message: failed.length
-        ? `${ok.toLocaleString('en-IN')} succeeded · ${failed.length} failed`
-        : STAGE_BY_ID[toStage].label,
-    })
-  }, [applyDealSnapshot, clearSelection, markSaved, overlays.failed, pushActivity, pushToast])
+  }, [clearSelection, overlays.failed, pushActivity, pushToast, scheduleClearSaved, writeDealSnapshot])
 
   const requestMove = useCallback((dealId, toStage) => {
     const deal = dealsRef.current[dealId]
-    if (!deal || deal.stage === toStage) return
+    if (!deal || deal.stage === toStage || pendingRef.current[dealId]) return
     if (!canMoveStage(deal.stage, toStage)) {
       pushToast({
         tone: 'warning',
@@ -902,10 +1032,30 @@ export function PipelineProvider({ children }) {
   }, [moveDeal, pushToast])
 
   const requestBulkMove = useCallback((ids, toStage) => {
+    if (bulkRunningRef.current) {
+      pushToast({
+        tone: 'warning',
+        title: 'A bulk move is already in progress',
+        message: 'Wait for the current batch to finish before starting another.',
+      })
+      return
+    }
+    const failedSelected = ids.filter((id) => overlays.failed[id])
+    if (failedSelected.length) {
+      const normalCount = ids.length - failedSelected.length
+      pushToast({
+        tone: 'warning',
+        title: 'Resolve failed saves first',
+        message: normalCount
+          ? 'Retry or undo the failed deals before moving the rest of the selection.'
+          : 'Retry or undo the failed deals before moving them to another stage.',
+      })
+      return
+    }
     const movable = []
     for (const id of ids) {
       const deal = dealsRef.current[id]
-      if (!deal || deal.stage === toStage || !canMoveStage(deal.stage, toStage)) continue
+      if (!deal || pendingRef.current[id] || deal.stage === toStage || !canMoveStage(deal.stage, toStage)) continue
       movable.push(id)
     }
     if (movable.length === 0) {
@@ -917,7 +1067,7 @@ export function PipelineProvider({ children }) {
       return
     }
     bulkMove(movable, toStage)
-  }, [bulkMove, pushToast])
+  }, [bulkMove, overlays.failed, pushToast])
 
   const retryFailedDeals = useCallback(async (ids) => {
     const groups = new Map()
@@ -987,12 +1137,12 @@ export function PipelineProvider({ children }) {
   }, [listIds, visibleStageIds])
 
   const visibleIdLookup = useMemo(
-    () => createVisibleIdSet(visibleStageIds, listIds),
+    () => stageLists.createVisibleIdSet(visibleStageIds, listIds),
     [listIds, visibleStageIds],
   )
 
   const visibleSelectedIds = useMemo(
-    () => (visibleStageIds ? intersectSelectedIds(selectedIds, visibleIdLookup) : selectedIds),
+    () => (visibleStageIds ? stageLists.intersectSelectedIds(selectedIds, visibleIdLookup) : selectedIds),
     [selectedIds, visibleIdLookup, visibleStageIds],
   )
 
@@ -1004,20 +1154,8 @@ export function PipelineProvider({ children }) {
   useEffect(() => {
     const savedIds = Object.keys(overlays.saved)
     if (!stageIds || savedIds.length === 0) return
-    setStageIds((current) => {
-      let next = current
-      let changed = false
-      for (const id of savedIds) {
-        const deal = dealsRef.current[id]
-        if (!deal) continue
-        const placed = placeDealInStage(next, id, deal.stage)
-        if (placed !== next) {
-          next = placed
-          changed = true
-        }
-      }
-      return changed ? next : current
-    })
+    const grouped = stageLists.groupIdsByStage(savedIds, (id) => dealsRef.current[id]?.stage)
+    setStageIds((current) => stageLists.applyGroupedStageMoves(current, grouped))
   }, [overlays.saved, stageIds])
 
   const unfilteredCounts = useMemo(() => {
@@ -1025,9 +1163,9 @@ export function PipelineProvider({ children }) {
     return Object.fromEntries(STAGES.map((stage) => [stage.id, stageIds[stage.id].length]))
   }, [stageIds])
 
-  const summaries = useMemo(() => {
+  const stageSummaries = useMemo(() => {
     if (!stageIds) {
-      return { totalDeals: 0, pipelineValue: 0, wonThisMonth: 0, needsAttention: 0, myDeals: 0 }
+      return { totalDeals: 0, pipelineValue: 0, wonThisMonth: 0, dateAttention: 0, myDeals: 0 }
     }
     const monthStart = new Date()
     monthStart.setDate(1)
@@ -1036,7 +1174,7 @@ export function PipelineProvider({ children }) {
 
     let pipelineValue = 0
     let wonThisMonth = 0
-    let needsAttention = 0
+    let dateAttention = 0
     let totalDeals = 0
     let myDeals = 0
 
@@ -1049,12 +1187,32 @@ export function PipelineProvider({ children }) {
         if (deal.stage === 'won' && deal.closedAt && deal.closedAt >= monthStartMs) {
           wonThisMonth += deal.value
         }
-        if (isNeedsAttention(deal, overlays)) needsAttention += 1
+        if (getAttentionReason(deal, NO_OVERLAYS)) dateAttention += 1
       }
     }
 
-    return { totalDeals, pipelineValue, wonThisMonth, needsAttention, myDeals }
-  }, [currentUser.name, overlays, stageIds])
+    return { totalDeals, pipelineValue, wonThisMonth, dateAttention, myDeals }
+  }, [currentUser.name, stageIds])
+
+  const summaries = useMemo(() => {
+    let extraAttention = 0
+    for (const id of Object.keys(overlays.conflicts)) {
+      const deal = dealsRef.current[id]
+      if (deal && !getAttentionReason(deal, NO_OVERLAYS)) extraAttention += 1
+    }
+    for (const id of Object.keys(overlays.failed)) {
+      if (overlays.conflicts[id]) continue
+      const deal = dealsRef.current[id]
+      if (deal && !getAttentionReason(deal, NO_OVERLAYS)) extraAttention += 1
+    }
+    return {
+      totalDeals: stageSummaries.totalDeals,
+      pipelineValue: stageSummaries.pipelineValue,
+      wonThisMonth: stageSummaries.wonThisMonth,
+      myDeals: stageSummaries.myDeals,
+      needsAttention: stageSummaries.dateAttention + extraAttention,
+    }
+  }, [overlays.conflicts, overlays.failed, stageSummaries])
 
   const value = useMemo(
     () => ({

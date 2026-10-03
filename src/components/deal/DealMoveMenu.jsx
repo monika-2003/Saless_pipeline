@@ -3,9 +3,17 @@ import { movableStages } from '../../utils/stageOrder.js'
 import { Button } from '../common/Button.jsx'
 import { Dropdown, DropdownItem } from '../common/Dropdown.jsx'
 
-export function DealMoveMenu({ deal, onMove, label = 'Move to' }) {
+export function DealMoveMenu({ deal, onMove, label = 'Move to', disabled = false, tabIndex }) {
   const stages = movableStages(deal.stage)
   if (stages.length === 0) return null
+  if (disabled) {
+    return (
+      <Button size="sm" variant="ghost" disabled tabIndex={tabIndex} aria-label={`Move ${deal.company} to another stage`}>
+        {label}
+        <ChevronDown size={12} />
+      </Button>
+    )
+  }
 
   return (
     <Dropdown
@@ -13,6 +21,7 @@ export function DealMoveMenu({ deal, onMove, label = 'Move to' }) {
         <Button
           size="sm"
           variant="ghost"
+          tabIndex={tabIndex}
           aria-label={`Move ${deal.company} to another stage`}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}

@@ -562,6 +562,11 @@
   cursor: pointer;
 }
 
+.deal-table tbody tr.is-saving {
+  opacity: 0.72;
+  cursor: default;
+}
+
 .deal-table tbody tr:hover,
 .deal-table tbody tr.is-selected {
   background: var(--primary-soft);

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { EMPTY_STAGE_IDS } from '../test/fixtures.js'
+import { STAGES } from '../data/constants.js'
 import {
   applyBulkMoveToStageIds,
+  applyGroupedStageMoves,
   applyMoveToStageIds,
   createVisibleIdSet,
   emptyOverlays,
+  groupIdsByStage,
   intersectSelectedIds,
   placeDealInStage,
 } from './stageLists.js'
@@ -45,6 +48,51 @@ describe('applyBulkMoveToStageIds', () => {
     expect(next.proposal_sent).toEqual(['deal-2'])
     expect(next.contacted).toEqual([])
     expect(next.negotiation).toEqual(['deal-3'])
+  })
+})
+
+describe('applyGroupedStageMoves', () => {
+  it('moves many ids in one pass per stage array', () => {
+    const ids = Array.from({ length: 10_000 }, (_, index) => `deal-${index}`)
+    const rest = Array.from({ length: 40_000 }, (_, index) => `fill-${index}`)
+    let filterCalls = 0
+    const source = new Proxy([...ids, ...rest], {
+      get(target, prop, receiver) {
+        if (prop === 'filter') {
+          return (...args) => {
+            filterCalls += 1
+            return Array.prototype.filter.apply(target, args)
+          }
+        }
+        return Reflect.get(target, prop, receiver)
+      },
+    })
+    const stageIds = {
+      ...EMPTY_STAGE_IDS,
+      new_lead: source,
+    }
+
+    const next = applyGroupedStageMoves(stageIds, { negotiation: ids })
+
+    expect(filterCalls).toBeLessThanOrEqual(STAGES.length)
+    expect(next.negotiation).toHaveLength(10_000)
+    expect(next.new_lead).toHaveLength(40_000)
+    expect(next.negotiation[0]).toBe('deal-0')
+    expect(next.new_lead).not.toContain('deal-0')
+  })
+
+  it('returns the same object when every id is already on its destination', () => {
+    const stageIds = {
+      ...EMPTY_STAGE_IDS,
+      negotiation: ['deal-1', 'deal-2'],
+    }
+    expect(applyGroupedStageMoves(stageIds, { negotiation: ['deal-1', 'deal-2'] })).toBe(stageIds)
+  })
+
+  it('groups ids by stage without nested scans', () => {
+    const grouped = groupIdsByStage(['a', 'b', 'c'], (id) => (id === 'b' ? 'lost' : 'won'))
+    expect(grouped.won).toEqual(['a', 'c'])
+    expect(grouped.lost).toEqual(['b'])
   })
 })
 

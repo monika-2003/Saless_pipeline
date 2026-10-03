@@ -395,6 +395,54 @@ describe('PipelineProvider bulk partial failure', () => {
     expect(result.current.visibleStageIds.proposal_sent).toEqual([])
   })
 
+  it('returns a failed deal to the source stage while the bulk job is still running', async () => {
+    const { result } = await renderPipeline()
+    const pending = []
+    vi.spyOn(pipelineApi, 'moveDeal').mockImplementation((payload) => (
+      new Promise((resolve) => {
+        pending.push({ payload, resolve })
+      })
+    ))
+
+    let job
+    act(() => {
+      job = result.current.bulkMove(['deal-1', 'deal-2', 'deal-3'], 'negotiation')
+    })
+    expect(result.current.getDeal('deal-2').stage).toBe('negotiation')
+
+    const failed = pending.find((entry) => entry.payload.id === 'deal-2')
+    act(() => {
+      failed.resolve({ ok: false, error: 'NETWORK' })
+    })
+
+    await waitFor(() => {
+      expect(result.current.getDeal('deal-2').stage).toBe('proposal_sent')
+    })
+    expect(result.current.bulkJob.running).toBe(true)
+    expect(result.current.stageIds.proposal_sent).toContain('deal-2')
+    expect(result.current.stageIds.negotiation).not.toContain('deal-2')
+    expect(result.current.overlays.failed['deal-2']).toBeTruthy()
+    expect(result.current.overlays.pending['deal-2']).toBeUndefined()
+    expect(result.current.getDeal('deal-1').stage).toBe('negotiation')
+
+    act(() => {
+      for (const entry of pending) {
+        if (entry.payload.id === 'deal-2') continue
+        entry.resolve({
+          ok: true,
+          fromStage: 'proposal_sent',
+          deal: { ...result.current.getDeal(entry.payload.id), stage: 'negotiation', version: 2 },
+        })
+      }
+    })
+    await act(async () => {
+      await job
+    })
+    expect(result.current.getDeal('deal-2').stage).toBe('proposal_sent')
+    expect(result.current.overlays.failed['deal-2']).toBeTruthy()
+    expect(result.current.bulkJob.failedIds).toEqual(['deal-2'])
+  })
+
   it('returns failed deals to the previous stage and keeps saved deals on the next stage', async () => {
     const { result } = await renderPipeline()
     const original = pipelineApi.moveDeal.bind(pipelineApi)
@@ -416,6 +464,66 @@ describe('PipelineProvider bulk partial failure', () => {
     expect(pipelineApi.getDeal('deal-1').stage).toBe('negotiation')
     expect(pipelineApi.getDeal('deal-2').stage).toBe('proposal_sent')
     expect(result.current.bulkJob.failedIds).toEqual(['deal-2'])
+  })
+
+  it('does not start a second bulk move while one is still running', async () => {
+    const { result } = await renderPipeline()
+    act(() => {
+      result.current.updateSimulation({
+        ...QUIET_SIMULATION,
+        latencyMin: 80,
+        latencyMax: 80,
+      })
+    })
+
+    let first
+    act(() => {
+      first = result.current.bulkMove(['deal-1', 'deal-2'], 'negotiation')
+    })
+    expect(result.current.bulkJob.running).toBe(true)
+    expect(result.current.bulkJob.total).toBe(2)
+    expect(result.current.getDeal('deal-1').stage).toBe('negotiation')
+
+    act(() => {
+      result.current.requestBulkMove(['deal-3'], 'lost')
+    })
+    expect(result.current.bulkJob.total).toBe(2)
+    expect(result.current.getDeal('deal-3').stage).toBe('proposal_sent')
+    expect(result.current.overlays.pending['deal-3']).toBeUndefined()
+
+    await act(async () => {
+      await first
+    })
+    expect(result.current.getDeal('deal-1').stage).toBe('negotiation')
+    expect(result.current.getDeal('deal-2').stage).toBe('negotiation')
+    expect(result.current.getDeal('deal-3').stage).toBe('proposal_sent')
+    expect(result.current.bulkJob.failedIds).toEqual([])
+    expect(result.current.overlays.failed['deal-1']).toBeUndefined()
+    expect(result.current.overlays.failed['deal-3']).toBeUndefined()
+  })
+
+  it('does not start a bulk move while a failed deal is still selected', async () => {
+    const { result } = await renderPipeline()
+    const original = pipelineApi.moveDeal.bind(pipelineApi)
+    vi.spyOn(pipelineApi, 'moveDeal').mockImplementation(async (payload) => {
+      if (payload.id === 'deal-2') return { ok: false, error: 'NETWORK' }
+      return original(payload)
+    })
+
+    await act(async () => {
+      await result.current.bulkMove(['deal-1', 'deal-2', 'deal-3'], 'negotiation')
+    })
+    expect(result.current.overlays.failed['deal-2']).toBeTruthy()
+
+    act(() => {
+      result.current.selectMany(['deal-1', 'deal-2'])
+      result.current.requestBulkMove(['deal-1', 'deal-2'], 'lost')
+    })
+
+    expect(result.current.getDeal('deal-1').stage).toBe('negotiation')
+    expect(result.current.getDeal('deal-2').stage).toBe('proposal_sent')
+    expect(result.current.stageIds.lost || []).not.toContain('deal-1')
+    expect(result.current.bulkJob?.toStage).not.toBe('lost')
   })
 
   it('retries only the selected deals that have a failed save', async () => {
@@ -476,6 +584,72 @@ describe('PipelineProvider selection vs filters', () => {
 describe('PipelineProvider persistence', () => {
   beforeEach(() => {
     seedPipeline([makeDeal({ id: 'deal-1', stage: 'proposal_sent', version: 1 })])
+  })
+
+  it('ignores a second move and selection while a deal is still saving', async () => {
+    const { result } = await renderPipeline()
+    act(() => {
+      result.current.updateSimulation({
+        ...QUIET_SIMULATION,
+        latencyMin: 80,
+        latencyMax: 80,
+      })
+    })
+
+    let first
+    act(() => {
+      first = result.current.moveDeal('deal-1', 'negotiation')
+    })
+    expect(result.current.overlays.pending['deal-1']).toBeTruthy()
+    expect(result.current.getDeal('deal-1').stage).toBe('negotiation')
+
+    act(() => {
+      result.current.requestMove('deal-1', 'lost')
+      result.current.toggleSelect('deal-1')
+    })
+    expect(result.current.selectedIds.has('deal-1')).toBe(false)
+    expect(result.current.getDeal('deal-1').stage).toBe('negotiation')
+
+    await act(async () => {
+      await first
+    })
+    expect(result.current.getDeal('deal-1').stage).toBe('negotiation')
+    expect(result.current.stageIds.lost || []).not.toContain('deal-1')
+    expect(result.current.overlays.pending['deal-1']).toBeUndefined()
+  })
+
+  it('skips pending deals when a second bulk move is requested', async () => {
+    seedPipeline([
+      makeDeal(),
+      makeDeal({ id: 'deal-2', company: 'Nimbus Labs', stage: 'proposal_sent' }),
+    ])
+    const { result } = await renderPipeline()
+    act(() => {
+      result.current.updateSimulation({
+        ...QUIET_SIMULATION,
+        latencyMin: 80,
+        latencyMax: 80,
+      })
+    })
+
+    let first
+    act(() => {
+      first = result.current.moveDeal('deal-1', 'negotiation')
+    })
+    expect(result.current.overlays.pending['deal-1']).toBeTruthy()
+
+    act(() => {
+      result.current.requestBulkMove(['deal-1', 'deal-2'], 'lost')
+    })
+
+    await act(async () => {
+      await first
+    })
+    await waitFor(() => {
+      expect(result.current.getDeal('deal-2').stage).toBe('lost')
+    })
+    expect(result.current.getDeal('deal-1').stage).toBe('negotiation')
+    expect(result.current.stageIds.negotiation).toContain('deal-1')
   })
 
   it('reapplies saved moves when the provider remounts', async () => {

@@ -11,12 +11,13 @@ import { cx } from '../../utils/cx.js'
 import { DealCard } from '../deal/DealCard.jsx'
 
 const CARD_GAP = 6
+const FAILED_CARD_GAP = 16
 const CARD_SIZE = 102 + CARD_GAP
-const FAILED_CARD_SIZE = 176 + CARD_GAP
+const FAILED_CARD_SIZE = 176 + FAILED_CARD_GAP
 const CONFLICT_CARD_SIZE = 240 + CARD_GAP
 const STATUS_CARD_SIZE = 130 + CARD_GAP
 
-export function StageColumn({ stage, ids, dragFromStage }) {
+export function StageColumn({ stage, ids, dragFromStage, onCardSelect }) {
   const {
     getDeal,
     overlays,
@@ -58,6 +59,7 @@ export function StageColumn({ stage, ids, dragFromStage }) {
 
   const selectedInColumn = ids.filter((id) => selectedIds.has(id)).length
   const allVisibleSelected = ids.length > 0 && selectedInColumn === ids.length
+  const stageHasSaving = ids.some((id) => overlays.pending[id])
   const isBlocked = Boolean(
     dragFromStage && dragFromStage !== stage.id && !canMoveStage(dragFromStage, stage.id),
   )
@@ -84,6 +86,7 @@ export function StageColumn({ stage, ids, dragFromStage }) {
             aria-label={`Select visible deals in ${stage.label}`}
             checked={allVisibleSelected}
             indeterminate={selectedInColumn > 0 && !allVisibleSelected}
+            disabled={stageHasSaving}
             onChange={(checked) => {
               if (checked) selectMany([...selectedIds, ...ids])
               else {
@@ -112,7 +115,7 @@ export function StageColumn({ stage, ids, dragFromStage }) {
               return (
                 <div
                   key={id}
-                  className="virtual-item"
+                  className={cx('virtual-item', overlays.failed[id] && 'is-failed')}
                   style={{
                     height: item.size,
                     transform: `translateY(${item.start}px)`,
@@ -130,8 +133,12 @@ export function StageColumn({ stage, ids, dragFromStage }) {
                     focused={focusedDealId === id}
                     onOpen={openDeal}
                     onToggleSelect={(dealId, event) => {
+                      if (onCardSelect) {
+                        onCardSelect(ids, dealId, event)
+                        return
+                      }
                       setFocusedDealId(dealId)
-                      if (event?.nativeEvent?.shiftKey && focusedDealId) {
+                      if ((event?.shiftKey || event?.nativeEvent?.shiftKey) && focusedDealId) {
                         selectRange(ids, focusedDealId, dealId)
                         return
                       }

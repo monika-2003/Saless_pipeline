@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
+import { useFocusTrap } from '../../hooks/useFocusTrap.js'
 import { cx } from '../../utils/cx.js'
 import { IconButton } from './IconButton.jsx'
 
@@ -35,14 +36,8 @@ export function Drawer({ title, children, onClose, labelledBy, footer }) {
   const [width, setWidth] = useState(readStoredWidth)
   const [resizing, setResizing] = useState(false)
   const dragRef = useRef(null)
-
-  useEffect(() => {
-    function onKey(event) {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  const panelRef = useRef(null)
+  useFocusTrap(panelRef, { onClose })
 
   useEffect(() => {
     document.documentElement.style.setProperty('--drawer-width', `${width}px`)
@@ -126,6 +121,7 @@ export function Drawer({ title, children, onClose, labelledBy, footer }) {
     <>
       <div className="drawer-backdrop" onClick={onClose} />
       <aside
+        ref={panelRef}
         className={cx('drawer', resizing && 'is-resizing')}
         style={{ width }}
         role="dialog"
@@ -146,7 +142,7 @@ export function Drawer({ title, children, onClose, labelledBy, footer }) {
         />
         <div className="drawer-header">
           <h2 id={labelledBy || undefined}>{title}</h2>
-          <IconButton label="Close" onClick={onClose}>
+          <IconButton label="Close" data-autofocus onClick={onClose}>
             <X size={16} />
           </IconButton>
         </div>

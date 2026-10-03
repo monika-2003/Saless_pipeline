@@ -1,10 +1,15 @@
 import { Check, Minus } from 'lucide-react'
 import { cx } from '../../utils/cx.js'
 
-export function Checkbox({ label, checked, onChange, indeterminate = false, id, ...props }) {
+export function Checkbox({ label, checked, onChange, indeterminate = false, id, disabled = false, ...props }) {
   return (
     <label
-      className={cx('check-wrap', checked && 'is-checked', indeterminate && 'is-partial')}
+      className={cx(
+        'check-wrap',
+        checked && 'is-checked',
+        indeterminate && 'is-partial',
+        disabled && 'is-disabled',
+      )}
       htmlFor={id}
       onClick={(event) => event.stopPropagation()}
     >
@@ -13,6 +18,7 @@ export function Checkbox({ label, checked, onChange, indeterminate = false, id, 
         type="checkbox"
         className="check-input"
         checked={checked}
+        disabled={disabled}
         ref={(node) => {
           if (node) node.indeterminate = indeterminate
         }}

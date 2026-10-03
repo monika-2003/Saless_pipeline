@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useFocusTrap } from '../../hooks/useFocusTrap.js'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { usePipeline } from '../../store/pipelineContext.js'
@@ -28,6 +29,13 @@ export function SimulationPanel() {
   const targetCount = targetList.length
   const panelRef = useRef(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  useFocusTrap(panelRef, {
+    enabled: simulationOpen,
+    onClose: () => {
+      setSimulationOpen(false)
+      setConfirmReset(false)
+    },
+  })
 
   useEffect(() => {
     if (!simulationOpen) setConfirmReset(false)
@@ -35,25 +43,14 @@ export function SimulationPanel() {
 
   useEffect(() => {
     if (!simulationOpen) return undefined
-    function onKey(event) {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      setSimulationOpen(false)
-      setConfirmReset(false)
-    }
     function onPointerDown(event) {
       if (event.target.closest('[data-sim-trigger]')) return
       if (panelRef.current && !panelRef.current.contains(event.target)) {
         setSimulationOpen(false)
       }
     }
-    document.addEventListener('keydown', onKey, true)
     document.addEventListener('mousedown', onPointerDown)
-    return () => {
-      document.removeEventListener('keydown', onKey, true)
-      document.removeEventListener('mousedown', onPointerDown)
-    }
+    return () => document.removeEventListener('mousedown', onPointerDown)
   }, [setSimulationOpen, simulationOpen])
 
   if (!simulationOpen) return null
@@ -73,7 +70,7 @@ export function SimulationPanel() {
             Admin tools for latency, failures, and teammate edits.
           </p>
         </div>
-        <IconButton label="Close" onClick={() => setSimulationOpen(false)}>
+        <IconButton label="Close" data-autofocus onClick={() => setSimulationOpen(false)}>
           <X size={14} />
         </IconButton>
       </div>

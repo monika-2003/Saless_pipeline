@@ -8,6 +8,7 @@ const listeners = new Set()
 let queuedFailures = new Set()
 let queuedConflicts = new Set()
 let lastActors = Object.create(null)
+let generation = 0
 
 function clearSimulationQueues() {
   queuedFailures = new Set()
@@ -41,13 +42,19 @@ function snapshot(deal) {
 
 export const pipelineApi = {
   init(dealsById) {
+    generation += 1
     serverDeals = cloneDealsById(dealsById)
     clearSimulationQueues()
   },
 
   shutdown() {
+    generation += 1
     listeners.clear()
     clearSimulationQueues()
+  },
+
+  getGeneration() {
+    return generation
   },
 
   queueNextFailure(ids) {
@@ -89,7 +96,9 @@ export const pipelineApi = {
   },
 
   async moveDeal({ id, toStage, clientVersion, force = false, excludeActor } = {}) {
+    const startedGeneration = generation
     await delay()
+    if (startedGeneration !== generation) return { ok: false, error: 'CANCELLED' }
 
     const server = serverDeals[id]
     if (!server) return { ok: false, error: 'NOT_FOUND' }

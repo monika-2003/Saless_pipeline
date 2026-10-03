@@ -84,6 +84,7 @@ export function DateRangePicker({
   const [activeChip, setActiveChip] = useState('from')
   const [hoverKey, setHoverKey] = useState(null)
   const [openMenu, setOpenMenu] = useState(null)
+  const [focusKey, setFocusKey] = useState(() => toDateInput((parseKey(from) || new Date()).getTime()))
   const buttonRef = useRef(null)
   const panelRef = useRef(null)
   const pickerId = useId()
@@ -116,6 +117,7 @@ export function DateRangePicker({
     setOpenMenu(null)
     const focus = parseKey(from) || parseKey(to) || new Date()
     setView({ year: focus.getFullYear(), month: focus.getMonth() })
+    setFocusKey(toDateInput(focus.getTime()))
 
     function place() {
       if (!buttonRef.current) return
@@ -152,13 +154,22 @@ export function DateRangePicker({
     document.addEventListener('keydown', onKey, true)
     window.addEventListener('resize', place)
     window.addEventListener('scroll', place, true)
+    const frame = requestAnimationFrame(() => {
+      panelRef.current?.querySelector(`[data-cal-day="${toDateInput(focus.getTime())}"]`)?.focus()
+    })
     return () => {
+      cancelAnimationFrame(frame)
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKey, true)
       window.removeEventListener('resize', place)
       window.removeEventListener('scroll', place, true)
     }
   }, [open, from, to])
+
+  useEffect(() => {
+    if (!open) return
+    panelRef.current?.querySelector(`[data-cal-day="${focusKey}"]`)?.focus()
+  }, [focusKey, open])
 
   const preview = useMemo(() => {
     let start = parseKey(draftFrom)
@@ -212,6 +223,53 @@ export function DateRangePicker({
 
     if (clicked.getMonth() !== view.month || clicked.getFullYear() !== view.year) {
       setView({ year: clicked.getFullYear(), month: clicked.getMonth() })
+    }
+  }
+
+  function moveCalendarFocus(delta) {
+    const index = cells.findIndex((cell) => cell.key === focusKey)
+    const start = index < 0 ? 0 : index
+    const nextIndex = start + delta
+    if (nextIndex < 0) {
+      const previous = shiftMonth(view.year, view.month, -1)
+      const previousCells = buildCells(previous.year, previous.month)
+      const target = previousCells[Math.max(0, previousCells.length + nextIndex)]
+      setView(previous)
+      setFocusKey(target.key)
+      return
+    }
+    if (nextIndex >= cells.length) {
+      const following = shiftMonth(view.year, view.month, 1)
+      const nextCells = buildCells(following.year, following.month)
+      const target = nextCells[Math.min(nextCells.length - 1, nextIndex - cells.length)]
+      setView(following)
+      setFocusKey(target.key)
+      return
+    }
+    setFocusKey(cells[nextIndex].key)
+  }
+
+  function onGridKeyDown(event) {
+    if (event.target.closest('.cal-caption-menu')) return
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      moveCalendarFocus(-1)
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      moveCalendarFocus(1)
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      moveCalendarFocus(-7)
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      moveCalendarFocus(7)
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      selectDay(focusKey)
     }
   }
 
@@ -362,7 +420,7 @@ export function DateRangePicker({
                 ))}
               </div>
 
-              <div className="cal-grid" onMouseLeave={() => setHoverKey(null)}>
+              <div className="cal-grid" onMouseLeave={() => setHoverKey(null)} onKeyDown={onGridKeyDown}>
                 {cells.map((cell, index) => {
                   const time = cell.date.getTime()
                   const inRange =
@@ -394,9 +452,12 @@ export function DateRangePicker({
                         (weekEnd || isEnd) && inRange && 'is-pill-end',
                         isActive && 'is-active-day',
                       )}
+                      data-cal-day={cell.key}
+                      tabIndex={cell.key === focusKey ? 0 : -1}
                       aria-label={formatDateChip(time)}
                       aria-pressed={isStart || isEnd}
                       onMouseEnter={() => setHoverKey(cell.key)}
+                      onFocus={() => setFocusKey(cell.key)}
                       onClick={() => selectDay(cell.key)}
                     >
                       <span className="cal-day-bg" />

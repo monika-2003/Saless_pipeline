@@ -82,9 +82,9 @@ Stage moves are **forward-only**. A deal cannot go back to an earlier stage exce
 1. User moves a deal → the card moves to the destination immediately (`pending` / Saving…).
 2. Pipeline API may succeed, fail, or return a **version conflict**.
 3. Success applies the server snapshot and shows **Saved** briefly. Saved is a confirmation, not a lock — the deal can move again.
-4. Network failure **moves the card back** to the previous stage and marks it failed. Retry resubmits the intended destination. Undo drops the failed overlay (the save never landed).
+4. Network failure **moves the card back** to the previous stage and marks it failed. Retry resubmits the intended destination. Undo clears the failed-save state after the card has already been restored to its previous stage.
 5. The same fail-back applies to bulk: successes stay on the new stage; failures return to the source stage.
-6. Retry is also offered on a successful single move via the toast.
+6. Undo is also offered on a successful single move via the toast when available.
 
 ### Conflict strategy
 
@@ -111,7 +111,7 @@ Header → **Simulation**, or the buttons on an open deal drawer:
 
 1. Confirm the counts (50,000 total, ~10,000 in New Lead).
 2. Drag one deal, or open it and use **Move stage**; watch Saving → Saved.
-3. **Arm, then move.** Select deals on the board *or* open a single deal. Click **Simulate conflict** or **Simulate API failure**. Nothing fails yet. Then choose **Move to…**, **Move stage**, or **Mark lost**. The queued error fires on that next save.
+3. **Arm, then move.** Select deals on the board **or** open a single deal. Click **Simulate conflict** or **Simulate API failure**. Nothing fails yet. Then choose **Move to…**, **Move stage**, or **Mark lost**. The queued error fires on that next save.
 4. Raise **Failure rate** to 100% and move again; use **Retry**. The deal should sit on the previous stage while failed.
 5. Leave **Teammate activity** on; the ticker and **Activity** popover show moves. Automated events only fire in the focused tab, then BroadcastChannel updates the other tab. Simulated teammate moves are forward-only.
 6. Open two tabs. Switch Tab B to Rahul Mehta. Move a deal in Tab A; Tab B should update.

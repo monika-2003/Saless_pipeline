@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DndContext, DragOverlay, PointerSensor, closestCorners, useSensor, useSensors } from '@dnd-kit/core'
 import { STAGES, STAGE_BY_ID } from '../../data/constants.js'
 import { useMediaQuery } from '../../hooks/useMediaQuery.js'
@@ -7,6 +7,10 @@ import { pinSelectedFirst } from '../../utils/selection.js'
 import { DealCard } from '../deal/DealCard.jsx'
 import { StageColumn } from './StageColumn.jsx'
 import './pipeline.css'
+
+function firstDealId(columns) {
+  return columns.find((column) => column.ids.length)?.ids[0] || null
+}
 
 export function PipelineBoard() {
   const {
@@ -20,10 +24,13 @@ export function PipelineBoard() {
     setFocusedDealId,
     openDeal,
     selectMany,
-    clearSelection,
+    toggleSelect,
+    selectRange,
   } = usePipeline()
   const [activeId, setActiveId] = useState(null)
   const isNarrow = useMediaQuery('(max-width: 768px)')
+  const boardRef = useRef(null)
+  const rangeAnchorRef = useRef(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -38,7 +45,7 @@ export function PipelineBoard() {
       stage,
       ids: pinSelected
         ? pinSelectedFirst(visibleStageIds[stage.id] || [], selectedIds)
-        : (visibleStageIds[stage.id] || []),
+        : (visibleStageIds?.[stage.id] || []),
     })),
     [pinSelected, selectedIds, visibleStageIds],
   )
@@ -55,6 +62,98 @@ export function PipelineBoard() {
     [requestMove],
   )
 
+  const focusCard = useCallback((dealId) => {
+    if (!dealId || !boardRef.current) return false
+    const card = boardRef.current.querySelector(`[data-deal-id="${dealId}"]`)
+    if (!card) return false
+    if (document.activeElement !== card) card.focus({ preventScroll: true })
+    return true
+  }, [])
+
+  useEffect(() => {
+    if (!focusedDealId) return undefined
+    if (focusCard(focusedDealId)) return undefined
+    let cancelled = false
+    const frame = requestAnimationFrame(() => {
+      if (!cancelled && !focusCard(focusedDealId)) {
+        requestAnimationFrame(() => {
+          if (!cancelled) focusCard(focusedDealId)
+        })
+      }
+    })
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(frame)
+    }
+  }, [focusCard, focusedDealId])
+
+  const moveFocus = useCallback((dealId) => {
+    if (!dealId) return
+    setFocusedDealId(dealId)
+  }, [setFocusedDealId])
+
+  const handleCardSelect = useCallback((columnIds, dealId, event) => {
+    const shift = Boolean(event?.shiftKey || event?.nativeEvent?.shiftKey)
+    if (shift && rangeAnchorRef.current && columnIds.includes(rangeAnchorRef.current)) {
+      selectRange(columnIds, rangeAnchorRef.current, dealId)
+      setFocusedDealId(dealId)
+      return
+    }
+    rangeAnchorRef.current = dealId
+    toggleSelect(dealId)
+  }, [selectRange, setFocusedDealId, toggleSelect])
+
+  const onBoardKeyDown = useCallback((event) => {
+    if (event.target.closest('input, textarea, [role="menu"], [role="listbox"]')) return
+
+    const currentId = focusedDealId || firstDealId(columns)
+    if (!currentId) return
+
+    if (!focusedDealId && (event.key === 'ArrowDown' || event.key === 'ArrowRight' || event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault()
+      if (!rangeAnchorRef.current) rangeAnchorRef.current = currentId
+      moveFocus(currentId)
+      return
+    }
+
+    const columnIndex = columns.findIndex((column) => column.ids.includes(currentId))
+    if (columnIndex < 0) return
+    const column = columns[columnIndex]
+    const index = column.ids.indexOf(currentId)
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      moveFocus(column.ids[Math.min(column.ids.length - 1, index + 1)])
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      moveFocus(column.ids[Math.max(0, index - 1)])
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      for (let i = columnIndex + 1; i < columns.length; i += 1) {
+        if (columns[i].ids[index] || columns[i].ids[0]) {
+          moveFocus(columns[i].ids[index] || columns[i].ids[0])
+          break
+        }
+      }
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      for (let i = columnIndex - 1; i >= 0; i -= 1) {
+        if (columns[i].ids[index] || columns[i].ids[0]) {
+          moveFocus(columns[i].ids[index] || columns[i].ids[0])
+          break
+        }
+      }
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+      event.preventDefault()
+      if (column.ids.some((id) => overlays.pending[id])) return
+      selectMany(column.ids)
+    }
+  }, [columns, focusedDealId, moveFocus, overlays.pending, selectMany])
+
   const activeDeal = activeId ? getDeal(activeId) : null
 
   return (
@@ -66,58 +165,28 @@ export function PipelineBoard() {
       onDragEnd={onDragEnd}
     >
       <div
+        ref={boardRef}
         className="pipeline-board"
         role="region"
         aria-label="Sales pipeline board"
-        onKeyDown={(event) => {
-          if (!focusedDealId) {
-            const first = columns.find((col) => col.ids.length)?.ids[0]
-            if (first && (event.key === 'ArrowDown' || event.key === 'ArrowRight')) setFocusedDealId(first)
-            return
-          }
-          const columnIndex = columns.findIndex((col) => col.ids.includes(focusedDealId))
-          if (columnIndex < 0) return
-          const column = columns[columnIndex]
-          const index = column.ids.indexOf(focusedDealId)
-
-          if (event.key === 'ArrowDown') {
-            event.preventDefault()
-            const next = column.ids[Math.min(column.ids.length - 1, index + 1)]
-            if (next) setFocusedDealId(next)
-          }
-          if (event.key === 'ArrowUp') {
-            event.preventDefault()
-            const next = column.ids[Math.max(0, index - 1)]
-            if (next) setFocusedDealId(next)
-          }
-          if (event.key === 'ArrowRight') {
-            event.preventDefault()
-            for (let i = columnIndex + 1; i < columns.length; i += 1) {
-              if (columns[i].ids[index] || columns[i].ids[0]) {
-                setFocusedDealId(columns[i].ids[index] || columns[i].ids[0])
-                break
-              }
-            }
-          }
-          if (event.key === 'ArrowLeft') {
-            event.preventDefault()
-            for (let i = columnIndex - 1; i >= 0; i -= 1) {
-              if (columns[i].ids[index] || columns[i].ids[0]) {
-                setFocusedDealId(columns[i].ids[index] || columns[i].ids[0])
-                break
-              }
-            }
-          }
-          if (event.key === 'Enter') openDeal(focusedDealId)
-          if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
-            event.preventDefault()
-            selectMany(column.ids)
-          }
-          if (event.key === 'Escape') clearSelection()
+        tabIndex={focusedDealId ? -1 : 0}
+        onFocus={(event) => {
+          if (event.target !== event.currentTarget) return
+          const first = focusedDealId || firstDealId(columns)
+          if (!first) return
+          if (!rangeAnchorRef.current) rangeAnchorRef.current = first
+          moveFocus(first)
         }}
+        onKeyDown={onBoardKeyDown}
       >
         {columns.map(({ stage, ids }) => (
-          <StageColumn key={stage.id} stage={stage} ids={ids} dragFromStage={activeDeal?.stage} />
+          <StageColumn
+            key={stage.id}
+            stage={stage}
+            ids={ids}
+            dragFromStage={activeDeal?.stage}
+            onCardSelect={handleCardSelect}
+          />
         ))}
       </div>
       <DragOverlay>
