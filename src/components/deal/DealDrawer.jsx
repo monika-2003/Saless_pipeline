@@ -22,6 +22,8 @@ export function DealDrawer() {
     resolveConflict,
     currentUser,
     activityEvents,
+    simulateConflict,
+    simulateFailure,
   } = usePipeline()
   const deal = openedDealId ? getDeal(openedDealId) : null
   if (!deal) return null
@@ -96,6 +98,18 @@ export function DealDrawer() {
           {canMoveStage(deal.stage, 'lost') ? (
             <Button variant="danger" onClick={() => requestMove(deal.id, 'lost')}>Mark lost</Button>
           ) : null}
+        </div>
+      </div>
+
+      <div className="drawer-sim">
+        <p className="drawer-sim-help">Arm a simulated error, then move this deal.</p>
+        <div className="drawer-sim-actions">
+          <Button variant="secondary" size="sm" onClick={() => simulateConflict([deal.id])}>
+            Simulate conflict
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => simulateFailure([deal.id])}>
+            Simulate API failure
+          </Button>
         </div>
       </div>
 

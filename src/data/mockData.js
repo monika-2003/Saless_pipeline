@@ -95,11 +95,11 @@ function makeDeal(index, stage, random, now) {
 
 let cachedPipeline = null
 
-export function generatePipeline() {
-  if (cachedPipeline) return cachedPipeline
+export function generatePipeline(now = Date.now()) {
+  if (cachedPipeline && cachedPipeline.seedNow === now) return cachedPipeline
+  if (cachedPipeline && arguments.length === 0) return cachedPipeline
 
   const random = mulberry32(20261001)
-  const now = Date.now()
   const stages = buildStageList()
   const dealsById = Object.create(null)
   const dealIdsByStage = {
@@ -118,7 +118,7 @@ export function generatePipeline() {
     dealIdsByStage[deal.stage].push(deal.id)
   }
 
-  cachedPipeline = { dealsById, dealIdsByStage }
+  cachedPipeline = { dealsById, dealIdsByStage, seedNow: now }
   return cachedPipeline
 }
 

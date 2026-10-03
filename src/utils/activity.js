@@ -110,3 +110,11 @@ export function persistActivity(events, limit) {
     /* quota or private mode */
   }
 }
+
+export function clearStoredActivity() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY)
+  } catch {
+    /* ignore */
+  }
+}

@@ -5,7 +5,7 @@ import { FilterBar } from './components/layout/FilterBar.jsx'
 import { ActivityPanel } from './components/layout/ActivityPanel.jsx'
 import { PipelineBoard } from './components/pipeline/PipelineBoard.jsx'
 import { AttentionTable } from './components/attention/AttentionTable.jsx'
-import { DealList } from './components/deal/DealList.jsx'
+import { FailedTable } from './components/failed/FailedTable.jsx'
 import { DealTable } from './components/deal/DealTable.jsx'
 import { DealDrawer } from './components/deal/DealDrawer.jsx'
 import { BulkProgress, BulkToolbar } from './components/bulk/BulkToolbar.jsx'
@@ -81,10 +81,10 @@ function ActivityLive() {
 }
 
 function AppShell() {
-  const { ready, view, layout, listIds, clearSelection, openedDealId } = usePipeline()
+  const { ready, view, layout, clearSelection, openedDealId } = usePipeline()
   const { shellRef, headerRef, tabsRef, actionsRef } = useFilterChromeScroll(ready)
   const pipelineView = view === 'all' || view === 'mine'
-  const tableLayout = pipelineView && layout === 'table'
+  const tableLayout = (pipelineView && layout === 'table') || view === 'attention' || view === 'failed'
   const showBoardChrome = pipelineView && layout !== 'table'
 
   if (!ready) return <LoadingScreen />
@@ -113,11 +113,7 @@ function AppShell() {
         {view === 'attention' ? (
           <AttentionTable />
         ) : view === 'failed' ? (
-          <DealList
-            ids={listIds}
-            emptyTitle="No failed saves"
-            emptyMessage="When a move cannot be saved, it will show up here with a retry action."
-          />
+          <FailedTable />
         ) : layout === 'table' ? (
           <DealTable />
         ) : (

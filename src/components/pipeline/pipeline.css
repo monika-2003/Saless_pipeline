@@ -98,19 +98,6 @@
   padding-bottom: 6px;
 }
 
-.deal-list-wrap {
-  flex: 1;
-  min-height: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: auto;
-}
-
-.deal-list-inner {
-  padding: 10px;
-}
-
 [data-theme='dark'] .stage-column {
   background: color-mix(in srgb, var(--stage, var(--text-muted)) 16%, var(--surface));
 }
@@ -146,9 +133,5 @@
 
   .stage-body {
     padding: 4px 8px 10px;
-  }
-
-  .deal-list-wrap {
-    border-radius: 12px;
   }
 }

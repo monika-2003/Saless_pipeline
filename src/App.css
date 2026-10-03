@@ -530,8 +530,22 @@
 .deal-table .col-priority { width: 10%; }
 .deal-table .col-close { width: 12%; }
 .deal-table .col-why { width: 16%; }
-.deal-table .col-status { width: 9%; }
+.deal-table .col-status { width: 10%; }
 .deal-table .col-move { width: 128px; overflow: visible; }
+.deal-table .col-actions {
+  width: 176px;
+  overflow: visible;
+  white-space: nowrap;
+  position: sticky;
+  right: 0;
+  background: var(--surface);
+  z-index: 1;
+  box-shadow: -8px 0 12px -8px color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+
+.deal-table thead .col-actions {
+  z-index: 3;
+}
 
 .deal-table-empty {
   padding: 28px 12px;
@@ -553,11 +567,25 @@
   background: var(--primary-soft);
 }
 
-.table-failed {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.deal-table tbody tr:hover .col-actions,
+.deal-table tbody tr.is-selected .col-actions {
+  background: var(--primary-soft);
+}
+
+.table-failed-label {
+  font-weight: 600;
   color: var(--danger);
+}
+
+.table-failed-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-failed-actions .btn-sm {
+  min-height: 28px;
 }
 
 .view-tab {

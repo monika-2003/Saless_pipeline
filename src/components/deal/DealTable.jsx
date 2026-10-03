@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { STAGES, TABLE_PAGE_SIZE, TABLE_PAGE_SIZES } from '../../data/constants.js'
 import { usePipeline } from '../../store/pipelineContext.js'
 import { pinSelectedFirst } from '../../utils/selection.js'
@@ -72,7 +72,7 @@ export function DealTable({
   const allPageSelected = pageIds.length > 0 && selectedOnPage === pageIds.length
   const startIndex = ids.length === 0 ? 0 : (safePage - 1) * pageSize + 1
   const endIndex = Math.min(ids.length, safePage * pageSize)
-  const colCount = getWhy ? 10 : 9
+  const colCount = getWhy ? 11 : 10
 
   return (
     <div className="deal-table-wrap">
@@ -136,6 +136,7 @@ export function DealTable({
               {getWhy ? <th className="col-why">Why</th> : null}
               <th className="col-status">Status</th>
               <th className="col-move">Move</th>
+              <th className="col-actions">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -182,18 +183,27 @@ export function DealTable({
                   <td className="col-status">
                     {pending ? 'Saving…' : null}
                     {saved && !pending && !failed ? 'Saved' : null}
-                    {failed ? (
-                      <span className="table-failed">
-                        Save failed
-                        <Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); retryDeal(id) }}>Retry</Button>
-                        <Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); discardFailed(id) }}>Undo</Button>
-                      </span>
-                    ) : null}
+                    {failed ? <span className="table-failed-label">Save failed</span> : null}
                     {conflict ? 'Conflict' : null}
                     {!pending && !saved && !failed && !conflict ? '—' : null}
                   </td>
                   <td className="col-move" onClick={(event) => event.stopPropagation()}>
                     <DealMoveMenu deal={deal} onMove={requestMove} />
+                  </td>
+                  <td className="col-actions" onClick={(event) => event.stopPropagation()}>
+                    {failed ? (
+                      <div className="table-failed-actions">
+                        <Button size="sm" onClick={() => retryDeal(id)}>
+                          <RefreshCw size={13} />
+                          Retry
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => discardFailed(id)}>
+                          Undo
+                        </Button>
+                      </div>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                 </tr>
               )

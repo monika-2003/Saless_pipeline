@@ -115,6 +115,9 @@
 }
 
 .bulk-progress-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 8px;
 }
 
@@ -279,4 +282,14 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
+}
+
+.sim-reset {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.sim-reset .sim-help {
+  margin-bottom: 10px;
 }

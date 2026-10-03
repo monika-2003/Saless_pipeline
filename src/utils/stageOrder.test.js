@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canMoveStage, movableStages, stageIndex } from './stageOrder.js'
+import { canMoveStage, movableStages, pickForwardStage, stageIndex } from './stageOrder.js'
 
 describe('canMoveStage', () => {
   it('allows only later stages', () => {
@@ -24,6 +24,12 @@ describe('canMoveStage', () => {
       'lost',
     ])
     expect(movableStages('lost')).toEqual([])
+  })
+
+  it('picks a later stage and never a previous one', () => {
+    expect(['negotiation', 'won', 'lost']).toContain(pickForwardStage('proposal_sent', 'contacted'))
+    expect(['won', 'lost']).toContain(pickForwardStage('proposal_sent', 'negotiation'))
+    expect(pickForwardStage('lost', 'won')).toBeNull()
   })
 
   it('orders stages from New Lead through Lost', () => {

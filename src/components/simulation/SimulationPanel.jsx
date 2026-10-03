@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { usePipeline } from '../../store/pipelineContext.js'
+import { formatCount } from '../../utils/format.js'
 import { Button } from '../common/Button.jsx'
 import { IconButton } from '../common/IconButton.jsx'
 import { cx } from '../../utils/cx.js'
@@ -14,10 +15,23 @@ export function SimulationPanel() {
     openedDealId,
     simulation,
     updateSimulation,
+    resetDemoData,
+    selectedIds,
     simulateConflict,
     simulateFailure,
+    getDeal,
   } = usePipeline()
+  const selectedList = [...selectedIds]
+  const selectedCount = selectedList.length
+  const openedDeal = !selectedCount && openedDealId ? getDeal(openedDealId) : null
+  const targetList = selectedCount ? selectedList : openedDeal ? [openedDeal.id] : []
+  const targetCount = targetList.length
   const panelRef = useRef(null)
+  const [confirmReset, setConfirmReset] = useState(false)
+
+  useEffect(() => {
+    if (!simulationOpen) setConfirmReset(false)
+  }, [simulationOpen])
 
   useEffect(() => {
     if (!simulationOpen) return undefined
@@ -26,6 +40,7 @@ export function SimulationPanel() {
       event.preventDefault()
       event.stopPropagation()
       setSimulationOpen(false)
+      setConfirmReset(false)
     }
     function onPointerDown(event) {
       if (event.target.closest('[data-sim-trigger]')) return
@@ -115,9 +130,47 @@ export function SimulationPanel() {
         </label>
       </div>
 
+      <p className="sim-help">
+        {openedDeal
+          ? `Arm ${openedDeal.company}, then move stage or Mark lost in the deal drawer.`
+          : 'Select deals or open a deal, arm a conflict or API failure, then Move to… or Mark lost.'}
+      </p>
       <div className="sim-actions">
-        <Button variant="secondary" onClick={simulateConflict}>Simulate conflict</Button>
-        <Button variant="secondary" onClick={simulateFailure}>Simulate API failure</Button>
+        <Button
+          variant="secondary"
+          disabled={!targetCount}
+          onClick={() => simulateConflict(targetList)}
+        >
+          {selectedCount ? `Simulate conflict (${formatCount(selectedCount)})` : 'Simulate conflict'}
+        </Button>
+        <Button
+          variant="secondary"
+          disabled={!targetCount}
+          onClick={() => simulateFailure(targetList)}
+        >
+          {selectedCount ? `Simulate API failure (${formatCount(selectedCount)})` : 'Simulate API failure'}
+        </Button>
+      </div>
+
+      <div className="sim-reset">
+        <p className="sim-help">Moves stay after reload. Reset restores the original 50,000 deals.</p>
+        {confirmReset ? (
+          <div className="sim-actions">
+            <Button
+              variant="danger"
+              onClick={() => {
+                resetDemoData()
+                setConfirmReset(false)
+                setSimulationOpen(false)
+              }}
+            >
+              Confirm reset
+            </Button>
+            <Button variant="secondary" onClick={() => setConfirmReset(false)}>Cancel</Button>
+          </div>
+        ) : (
+          <Button variant="danger" onClick={() => setConfirmReset(true)}>Reset demo data</Button>
+        )}
       </div>
     </aside>,
     document.body,

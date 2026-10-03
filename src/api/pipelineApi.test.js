@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { OWNERS } from '../data/constants.js'
 import { pipelineApi } from './pipelineApi.js'
 import { makeDeal, QUIET_SIMULATION } from '../test/fixtures.js'
 
@@ -45,6 +46,7 @@ describe('pipelineApi optimistic locking', () => {
     expect(result.error).toBe('CONFLICT')
     expect(result.serverDeal.stage).toBe('lost')
     expect(result.serverDeal.version).toBe(2)
+    expect(result.actorName).toBe('Rahul Mehta')
     expect(pipelineApi.getDeal('deal-1').stage).toBe('lost')
   })
 
@@ -153,5 +155,60 @@ describe('pipelineApi optimistic locking', () => {
     const deal = pipelineApi.getDeal('deal-1')
     expect(deal.probability).toBe(0)
     expect(deal.closedAt).toEqual(expect.any(Number))
+  })
+
+  it('fails the next move when a deal is queued for API failure', async () => {
+    pipelineApi.queueNextFailure(['deal-1'])
+
+    const failed = await pipelineApi.moveDeal({
+      id: 'deal-1',
+      toStage: 'negotiation',
+      clientVersion: 1,
+    })
+    expect(failed).toEqual({ ok: false, error: 'NETWORK' })
+    expect(pipelineApi.getDeal('deal-1').stage).toBe('proposal_sent')
+    expect(pipelineApi.getQueuedSimulation().failures).toEqual([])
+
+    const retry = await pipelineApi.moveDeal({
+      id: 'deal-1',
+      toStage: 'negotiation',
+      clientVersion: 1,
+    })
+    expect(retry.ok).toBe(true)
+    expect(retry.deal.stage).toBe('negotiation')
+  })
+
+  it('conflicts the next move when a deal is queued for a teammate edit', async () => {
+    pipelineApi.queueNextConflict(['deal-1'])
+
+    const result = await pipelineApi.moveDeal({
+      id: 'deal-1',
+      toStage: 'negotiation',
+      clientVersion: 1,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe('CONFLICT')
+    expect(['won', 'lost']).toContain(result.serverDeal.stage)
+    expect(result.serverDeal.version).toBe(2)
+    expect(OWNERS).toContain(result.actorName)
+    expect(result.actorName).not.toBe('A teammate')
+    expect(pipelineApi.getDeal('deal-1').stage).not.toBe('negotiation')
+    expect(pipelineApi.getQueuedSimulation().conflicts).toEqual([])
+  })
+
+  it('replaces a queued conflict with a queued failure', async () => {
+    pipelineApi.queueNextConflict(['deal-1'])
+    pipelineApi.queueNextFailure(['deal-1'])
+
+    const result = await pipelineApi.moveDeal({
+      id: 'deal-1',
+      toStage: 'lost',
+      clientVersion: 1,
+    })
+
+    expect(result).toEqual({ ok: false, error: 'NETWORK' })
+    expect(pipelineApi.getDeal('deal-1').stage).toBe('proposal_sent')
+    expect(pipelineApi.getDeal('deal-1').version).toBe(1)
   })
 })

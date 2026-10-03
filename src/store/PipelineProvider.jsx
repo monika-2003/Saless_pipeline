@@ -19,10 +19,20 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue.js'
 import { createRealtimeChannel, createRealtimeEvent } from '../services/realtimeChannel.js'
 import {
   ACTIVITY_TYPES,
+  clearStoredActivity,
   createActivityEvent,
   loadStoredActivity,
   persistActivity,
 } from '../utils/activity.js'
+import {
+  applyDealPatches,
+  flushDealChanges,
+  loadDealPatches,
+  loadSeedNow,
+  persistDealChange,
+  persistSeedNow,
+  resetPersistedDeals,
+} from '../utils/pipelinePersist.js'
 import { runPool } from '../utils/concurrency.js'
 import {
   dealMatchesFilters,
@@ -33,7 +43,15 @@ import {
 } from '../utils/filters.js'
 import { canMoveStage } from '../utils/stageOrder.js'
 import { PipelineContext } from './pipelineContext.js'
-import { applyBulkMoveToStageIds, applyMoveToStageIds, emptyOverlays } from './stageLists.js'
+import {
+  applyBulkMoveToStageIds,
+  applyMoveToStageIds,
+  cloneStageIds,
+  createVisibleIdSet,
+  emptyOverlays,
+  intersectSelectedIds,
+  placeDealInStage,
+} from './stageLists.js'
 
 const USER_STORAGE_KEY = 'sales-pipeline-current-user'
 
@@ -99,13 +117,23 @@ export function PipelineProvider({ children }) {
   )
 
   useEffect(() => {
-    const { dealsById, dealIdsByStage } = generatePipeline()
-    dealsRef.current = cloneDealsById(dealsById)
+    const seedNow = loadSeedNow() ?? Date.now()
+    persistSeedNow(seedNow)
+    const generated = generatePipeline(seedNow)
+    const dealsById = cloneDealsById(generated.dealsById)
+    const dealIdsByStage = applyDealPatches(dealsById, generated.dealIdsByStage, loadDealPatches())
+    dealsRef.current = dealsById
     pipelineApi.init(dealsById)
     pipelineApi.setSettings(DEFAULT_SIMULATION)
-    setStageIds(dealIdsByStage)
+    setStageIds(cloneStageIds(dealIdsByStage))
     setReady(true)
-    return () => pipelineApi.shutdown()
+    const persistOnHide = () => flushDealChanges()
+    window.addEventListener('pagehide', persistOnHide)
+    return () => {
+      window.removeEventListener('pagehide', persistOnHide)
+      flushDealChanges()
+      pipelineApi.shutdown()
+    }
   }, [])
 
   const getDeal = useCallback((id) => dealsRef.current[id], [])
@@ -121,7 +149,12 @@ export function PipelineProvider({ children }) {
   }, [])
 
   const applyDealSnapshot = useCallback((deal) => {
-    dealsRef.current[deal.id] = { ...dealsRef.current[deal.id], ...deal }
+    const previous = dealsRef.current[deal.id]
+    dealsRef.current[deal.id] = { ...previous, ...deal }
+    const next = dealsRef.current[deal.id]
+    if (!next?.stage) return
+    persistDealChange(next)
+    setStageIds((current) => placeDealInStage(current, deal.id, next.stage))
   }, [])
 
   const markSaved = useCallback((dealId) => {
@@ -269,8 +302,6 @@ export function PipelineProvider({ children }) {
     const actor = currentUserRef.current
     const previousStage = alreadyThere ? fromStage : deal.stage
 
-    if (!alreadyThere) moveLocal(dealId, toStage)
-
     pendingRef.current[dealId] = { fromStage: previousStage, toStage, clientVersion }
     setOverlays((current) => {
       const next = copyOverlays(current)
@@ -280,6 +311,7 @@ export function PipelineProvider({ children }) {
       delete next.saved[dealId]
       return next
     })
+    if (!alreadyThere) moveLocal(dealId, toStage)
     if (undoable) lastUndoRef.current = { dealId, fromStage: previousStage, toStage }
     if (options.retried) {
       pushActivity({
@@ -297,6 +329,7 @@ export function PipelineProvider({ children }) {
       toStage,
       clientVersion,
       force: options.force,
+      excludeActor: currentUserRef.current.name,
     })
 
     delete pendingRef.current[dealId]
@@ -338,8 +371,9 @@ export function PipelineProvider({ children }) {
     }
 
     if (result.error === 'CONFLICT') {
+      if (dealsRef.current[dealId]?.stage !== previousStage) moveLocal(dealId, previousStage)
       const serverDeal = result.serverDeal
-      const other = actorFromName(payloadActorName(serverDeal, options.actorName))
+      const other = actorFromName(payloadActorName(serverDeal, result.actorName || options.actorName))
       setOverlays((current) => {
         const next = copyOverlays(current)
         delete next.pending[dealId]
@@ -368,6 +402,7 @@ export function PipelineProvider({ children }) {
       return result
     }
 
+    if (dealsRef.current[dealId]?.stage !== previousStage) moveLocal(dealId, previousStage)
     setOverlays((current) => {
       const next = copyOverlays(current)
       delete next.pending[dealId]
@@ -503,6 +538,10 @@ export function PipelineProvider({ children }) {
         if (id) {
           const deal = pipelineApi.getDeal(id)
           const toStage = pipelineApi.pickRandomStage(deal.stage)
+          if (!toStage) {
+            tick()
+            return
+          }
           const actorName = pipelineApi.pickRandomActor(currentUserRef.current.name)
           const actor = actorFromName(actorName)
           const moved = pipelineApi.teammateMove(id, toStage, actorName, { silent: true })
@@ -534,6 +573,40 @@ export function PipelineProvider({ children }) {
     })
   }, [])
 
+  const resetDemoData = useCallback(() => {
+    resetPersistedDeals()
+    clearStoredActivity()
+    setActivityEvents([])
+    Object.keys(savedTimersRef.current).forEach((id) => {
+      window.clearTimeout(savedTimersRef.current[id])
+      delete savedTimersRef.current[id]
+    })
+    pendingRef.current = Object.create(null)
+    lastUndoRef.current = null
+
+    const seedNow = loadSeedNow() ?? Date.now()
+    persistSeedNow(seedNow)
+    const generated = generatePipeline(seedNow)
+    const dealsById = cloneDealsById(generated.dealsById)
+    dealsRef.current = dealsById
+    pipelineApi.init(dealsById)
+    pipelineApi.setSettings(simulation)
+    setStageIds(cloneStageIds(generated.dealIdsByStage))
+    setOverlays({ ...emptyOverlays(), saved: Object.create(null) })
+    setSelectedIds(new Set())
+    setPinSelected(false)
+    setBulkJob(null)
+    setOpenedDealId(null)
+    setFocusedDealId(null)
+    setFilterDraft(createEmptyFilters())
+    setView('all')
+    pushToast({
+      tone: 'info',
+      title: 'Demo data reset',
+      message: 'The original 50,000 deals were restored.',
+    })
+  }, [pushToast, simulation])
+
   const openDeal = useCallback((id) => {
     setSimulationOpen(false)
     setActivityOpen(false)
@@ -557,91 +630,78 @@ export function PipelineProvider({ children }) {
     }
   }, [])
 
-  const simulateConflict = useCallback(async () => {
-    const preferred = openedDealId || [...selectedIds][0] || pipelineApi.pickRandomOpenDealId()
-    const deal = dealsRef.current[preferred]
-    if (!deal) return
+  const resolveSimulationIds = useCallback((ids) => {
+    const source = Array.isArray(ids) && ids.length
+      ? ids
+      : selectedIds.size
+        ? [...selectedIds]
+        : openedDealId
+          ? [openedDealId]
+          : []
+    return source.filter((id) => dealsRef.current[id])
+  }, [openedDealId, selectedIds])
 
-    const fromStage = deal.stage
-    let localTarget = pipelineApi.pickRandomStage(fromStage)
-    let serverTarget = pipelineApi.pickRandomStage(fromStage)
-    while (serverTarget === localTarget) serverTarget = pipelineApi.pickRandomStage(fromStage)
+  const simulateConflict = useCallback((ids) => {
+    const targets = resolveSimulationIds(ids)
+    if (!targets.length) {
+      pushToast({
+        tone: 'warning',
+        title: 'Select deals first',
+        message: 'Select deals or open a deal, then simulate a conflict on the next move.',
+      })
+      return
+    }
 
-    const actorName = pipelineApi.pickRandomActor(currentUserRef.current.name)
-    const actor = actorFromName(actorName)
-    const clientVersion = deal.version
-    moveLocal(preferred, localTarget)
-    pendingRef.current[preferred] = { fromStage, toStage: localTarget, clientVersion }
-    setOverlays((current) => {
-      const next = copyOverlays(current)
-      next.pending[preferred] = pendingRef.current[preferred]
-      return next
-    })
-    openDeal(preferred)
+    pipelineApi.queueNextConflict(targets)
+    setSimulationOpen(false)
 
-    const moved = pipelineApi.teammateMove(preferred, serverTarget, actorName, { silent: true })
-    const result = await pipelineApi.moveDeal({ id: preferred, toStage: localTarget, clientVersion })
-    delete pendingRef.current[preferred]
+    if (targets.length === 1) {
+      const deal = dealsRef.current[targets[0]]
+      pushToast({
+        tone: 'warning',
+        title: 'Conflict armed',
+        message: `Move ${deal?.company || 'this deal'} to a stage or Mark lost. The next save will conflict.`,
+      })
+      return
+    }
 
-    const serverDeal = result.serverDeal || moved?.deal || pipelineApi.getDeal(preferred)
-    setOverlays((current) => {
-      const next = copyOverlays(current)
-      delete next.pending[preferred]
-      next.conflicts[preferred] = {
-        localStage: localTarget,
-        fromStage,
-        serverDeal,
-        actorName: actor.name,
-        actorId: actor.id,
-      }
-      return next
-    })
-    pushActivity({
-      type: ACTIVITY_TYPES.CONFLICT_DETECTED,
-      dealId: preferred,
-      dealName: deal.company,
-      actorId: actor.id,
-      actorName: actor.name,
-      metadata: { localStage: localTarget, toStage: serverTarget },
-    })
     pushToast({
       tone: 'warning',
-      title: 'Conflict simulated',
-      message: `${actor.name} moved ${deal.company} at the same time.`,
+      title: 'Conflict armed',
+      message: `Move the ${targets.length} selected deals or Mark lost. Those saves will conflict.`,
     })
-  }, [moveLocal, openDeal, openedDealId, pushActivity, pushToast, selectedIds])
+  }, [pushToast, resolveSimulationIds])
 
-  const simulateFailure = useCallback(() => {
-    const preferred = openedDealId || [...selectedIds][0] || pipelineApi.pickRandomOpenDealId()
-    const deal = dealsRef.current[preferred]
-    if (!deal) return
+  const simulateFailure = useCallback((ids) => {
+    const targets = resolveSimulationIds(ids)
+    if (!targets.length) {
+      pushToast({
+        tone: 'warning',
+        title: 'Select deals first',
+        message: 'Select deals or open a deal, then simulate an API failure on the next move.',
+      })
+      return
+    }
 
-    const fromStage = deal.stage
-    const toStage = pipelineApi.pickRandomStage(fromStage)
-    const clientVersion = deal.version
-    const actor = currentUserRef.current
-    moveLocal(preferred, toStage)
-    setOverlays((current) => {
-      const next = copyOverlays(current)
-      delete next.pending[preferred]
-      next.failed[preferred] = { fromStage, toStage, clientVersion }
-      return next
-    })
-    openDeal(preferred)
-    pushActivity({
-      type: ACTIVITY_TYPES.SAVE_FAILED,
-      dealId: preferred,
-      dealName: deal.company,
-      actorId: actor.id,
-      actorName: actor.name,
-      metadata: { fromStage, toStage, source: 'simulation' },
-    })
+    pipelineApi.queueNextFailure(targets)
+    setSimulationOpen(false)
+
+    if (targets.length === 1) {
+      const deal = dealsRef.current[targets[0]]
+      pushToast({
+        tone: 'danger',
+        title: 'API failure armed',
+        message: `Move ${deal?.company || 'this deal'} to a stage or Mark lost. The next save will fail.`,
+      })
+      return
+    }
+
     pushToast({
       tone: 'danger',
-      title: 'Failure simulated',
-      message: `${deal.company} could not be saved.`,
+      title: 'API failure armed',
+      message: `Move the ${targets.length} selected deals or Mark lost. Those saves will fail.`,
     })
-  }, [moveLocal, openDeal, openedDealId, pushActivity, pushToast, selectedIds])
+  }, [pushToast, resolveSimulationIds])
 
   const toggleSelect = useCallback((dealId, options = {}) => {
     setPinSelected(false)
@@ -700,13 +760,9 @@ export function PipelineProvider({ children }) {
         clientVersion: deal.version,
         company: deal.company,
       })
-      if (!sameStage) deal.stage = toStage
     }
     if (jobs.length === 0) return
 
-    if (!options.resubmit) {
-      setStageIds((current) => applyBulkMoveToStageIds(current, jobs.map((job) => job.id), toStage))
-    }
     setOverlays((current) => {
       const next = copyOverlays(current)
       for (const job of jobs) {
@@ -718,7 +774,10 @@ export function PipelineProvider({ children }) {
     })
     jobs.forEach((job) => {
       pendingRef.current[job.id] = job
+      const deal = dealsRef.current[job.id]
+      if (deal && deal.stage !== toStage) deal.stage = toStage
     })
+    setStageIds((current) => applyBulkMoveToStageIds(current, jobs.map((job) => job.id), toStage))
 
     const actor = currentUserRef.current
     pushActivity({
@@ -734,7 +793,12 @@ export function PipelineProvider({ children }) {
 
     const failed = await runPool(
       jobs,
-      async (job) => pipelineApi.moveDeal({ id: job.id, toStage, clientVersion: job.clientVersion }),
+      async (job) => pipelineApi.moveDeal({
+        id: job.id,
+        toStage,
+        clientVersion: job.clientVersion,
+        excludeActor: currentUserRef.current.name,
+      }),
       BULK_CONCURRENCY,
       (done, failedCount) => {
         completed = done
@@ -746,8 +810,20 @@ export function PipelineProvider({ children }) {
       },
     )
 
-    const failedIds = []
+    const failedIds = failed.map((entry) => entry.item.id)
     const actorNow = currentUserRef.current
+    if (failedIds.length) {
+      setStageIds((current) => {
+        let next = current
+        for (const job of jobs) {
+          if (!failedIds.includes(job.id)) continue
+          const deal = dealsRef.current[job.id]
+          if (deal && deal.stage !== job.fromStage) deal.stage = job.fromStage
+          next = placeDealInStage(next, job.id, job.fromStage)
+        }
+        return next
+      })
+    }
     setOverlays((current) => {
       const next = copyOverlays(current)
       for (const job of jobs) {
@@ -756,30 +832,31 @@ export function PipelineProvider({ children }) {
       }
       for (const entry of failed) {
         const job = entry.item
-        failedIds.push(job.id)
         if (entry.result?.error === 'CONFLICT') {
+          const other = actorFromName(payloadActorName(
+            entry.result.serverDeal,
+            entry.result.actorName,
+          ))
           next.conflicts[job.id] = {
             localStage: toStage,
             fromStage: job.fromStage,
             serverDeal: entry.result.serverDeal,
-            actorName: 'A teammate',
-            actorId: '',
+            actorName: other.name,
+            actorId: other.id,
           }
         } else {
           next.failed[job.id] = { fromStage: job.fromStage, toStage, clientVersion: job.clientVersion }
         }
       }
-      for (const job of jobs) {
-        if (!failedIds.includes(job.id)) {
-          const fresh = pipelineApi.getDeal(job.id)
-          if (fresh) {
-            applyDealSnapshot(fresh)
-            next.saved[job.id] = true
-          }
-        }
-      }
       return next
     })
+
+    for (const job of jobs) {
+      if (failedIds.includes(job.id)) continue
+      const fresh = pipelineApi.getDeal(job.id)
+      if (fresh) applyDealSnapshot(fresh)
+      markSaved(job.id)
+    }
 
     setBulkJob({
       toStage,
@@ -808,7 +885,7 @@ export function PipelineProvider({ children }) {
         ? `${ok.toLocaleString('en-IN')} succeeded · ${failed.length} failed`
         : STAGE_BY_ID[toStage].label,
     })
-  }, [applyDealSnapshot, clearSelection, overlays.failed, pushActivity, pushToast])
+  }, [applyDealSnapshot, clearSelection, markSaved, overlays.failed, pushActivity, pushToast])
 
   const requestMove = useCallback((dealId, toStage) => {
     const deal = dealsRef.current[dealId]
@@ -842,10 +919,32 @@ export function PipelineProvider({ children }) {
     bulkMove(movable, toStage)
   }, [bulkMove, pushToast])
 
+  const retryFailedDeals = useCallback(async (ids) => {
+    const groups = new Map()
+    for (const id of ids) {
+      const failed = overlays.failed[id]
+      if (!failed || !dealsRef.current[id]) continue
+      const group = groups.get(failed.toStage) || []
+      group.push(id)
+      groups.set(failed.toStage, group)
+    }
+    if (groups.size === 0) {
+      pushToast({
+        tone: 'warning',
+        title: 'Nothing to retry',
+        message: 'Select deals with a failed save.',
+      })
+      return
+    }
+    for (const [toStage, group] of groups) {
+      await bulkMove(group, toStage, { resubmit: true, allowBackward: true })
+    }
+  }, [bulkMove, overlays.failed, pushToast])
+
   const retryBulkFailed = useCallback(() => {
     if (!bulkJob?.failedIds?.length) return
-    return bulkMove(bulkJob.failedIds, bulkJob.toStage, { resubmit: true, allowBackward: true })
-  }, [bulkJob, bulkMove])
+    return retryFailedDeals(bulkJob.failedIds)
+  }, [bulkJob, retryFailedDeals])
 
   const visibleStageIds = useMemo(() => {
     if (!stageIds) return null
@@ -854,7 +953,7 @@ export function PipelineProvider({ children }) {
       const ids = []
       for (const id of stageIds[stage.id]) {
         const deal = dealsRef.current[id]
-        if (!deal) continue
+        if (!deal || deal.stage !== stage.id) continue
         if (!dealMatchesSearch(deal, filters.search)) continue
         if (!dealMatchesFilters(deal, filters)) continue
         if (view === 'mine' && deal.owner !== currentUser.name) continue
@@ -886,6 +985,40 @@ export function PipelineProvider({ children }) {
     if (!visibleStageIds) return 0
     return STAGES.reduce((sum, stage) => sum + visibleStageIds[stage.id].length, 0)
   }, [listIds, visibleStageIds])
+
+  const visibleIdLookup = useMemo(
+    () => createVisibleIdSet(visibleStageIds, listIds),
+    [listIds, visibleStageIds],
+  )
+
+  const visibleSelectedIds = useMemo(
+    () => (visibleStageIds ? intersectSelectedIds(selectedIds, visibleIdLookup) : selectedIds),
+    [selectedIds, visibleIdLookup, visibleStageIds],
+  )
+
+  useEffect(() => {
+    if (visibleSelectedIds === selectedIds) return
+    setSelectedIds(visibleSelectedIds)
+  }, [selectedIds, visibleSelectedIds])
+
+  useEffect(() => {
+    const savedIds = Object.keys(overlays.saved)
+    if (!stageIds || savedIds.length === 0) return
+    setStageIds((current) => {
+      let next = current
+      let changed = false
+      for (const id of savedIds) {
+        const deal = dealsRef.current[id]
+        if (!deal) continue
+        const placed = placeDealInStage(next, id, deal.stage)
+        if (placed !== next) {
+          next = placed
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [overlays.saved, stageIds])
 
   const unfilteredCounts = useMemo(() => {
     if (!stageIds) return {}
@@ -936,7 +1069,7 @@ export function PipelineProvider({ children }) {
       unfilteredCounts,
       matchingCount,
       overlays,
-      selectedIds,
+      selectedIds: visibleSelectedIds,
       pinSelected,
       pinSelectedToTop,
       view,
@@ -955,6 +1088,7 @@ export function PipelineProvider({ children }) {
       requestMove,
       requestBulkMove,
       retryDeal,
+      retryFailedDeals,
       discardFailed,
       resolveConflict,
       undoLast,
@@ -967,6 +1101,7 @@ export function PipelineProvider({ children }) {
       retryBulkFailed,
       simulation,
       updateSimulation,
+      resetDemoData,
       simulateConflict,
       simulateFailure,
       simulationOpen,
@@ -1004,9 +1139,10 @@ export function PipelineProvider({ children }) {
       resolveConflict,
       retryBulkFailed,
       retryDeal,
+      retryFailedDeals,
       selectMany,
       selectRange,
-      selectedIds,
+      visibleSelectedIds,
       setCurrentUser,
       simulation,
       simulationOpen,
@@ -1016,6 +1152,7 @@ export function PipelineProvider({ children }) {
       undoLast,
       unfilteredCounts,
       updateSimulation,
+      resetDemoData,
       simulateConflict,
       simulateFailure,
       view,

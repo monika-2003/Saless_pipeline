@@ -14,3 +14,11 @@ export function canMoveStage(fromStage, toStage) {
 export function movableStages(fromStage) {
   return STAGES.filter((stage) => canMoveStage(fromStage, stage.id))
 }
+
+export function pickForwardStage(fromStage, except) {
+  const options = movableStages(fromStage)
+    .map((stage) => stage.id)
+    .filter((id) => id !== except)
+  if (!options.length) return null
+  return options[Math.floor(Math.random() * options.length)]
+}

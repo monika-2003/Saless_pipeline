@@ -1,4 +1,4 @@
-import { ArrowUpToLine, X } from 'lucide-react'
+import { ArrowUpToLine, RefreshCw, X } from 'lucide-react'
 import { STAGES, STAGE_BY_ID } from '../../data/constants.js'
 import { formatCount } from '../../utils/format.js'
 import { canMoveStage } from '../../utils/stageOrder.js'
@@ -10,10 +10,29 @@ import { cx } from '../../utils/cx.js'
 import './bulk.css'
 
 export function BulkToolbar() {
-  const { selectedIds, pinSelected, pinSelectedToTop, clearSelection, requestBulkMove, getDeal } = usePipeline()
+  const {
+    selectedIds,
+    pinSelected,
+    pinSelectedToTop,
+    clearSelection,
+    requestBulkMove,
+    getDeal,
+    overlays,
+    selectMany,
+    retryFailedDeals,
+    view,
+    listIds,
+  } = usePipeline()
   const count = selectedIds.size
   const ids = [...selectedIds]
   const hasSelection = count > 0
+  const failedIds = view === 'failed' && listIds
+    ? listIds
+    : Object.keys(overlays.failed)
+  const hasFailed = failedIds.length > 0
+  const allFailedSelected = hasFailed && failedIds.every((id) => selectedIds.has(id))
+  const selectedFailedIds = ids.filter((id) => overlays.failed[id])
+  const selectedFailedCount = selectedFailedIds.length
 
   const eligibleStages = hasSelection
     ? STAGES.filter((stage) =>
@@ -56,6 +75,29 @@ export function BulkToolbar() {
         >
           Mark lost
         </Button>
+        {hasFailed ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              if (allFailedSelected) {
+                const next = new Set(selectedIds)
+                failedIds.forEach((id) => next.delete(id))
+                selectMany([...next])
+                return
+              }
+              selectMany([...new Set([...selectedIds, ...failedIds])])
+            }}
+          >
+            {allFailedSelected ? 'Unselect failed' : `Select failed (${formatCount(failedIds.length)})`}
+          </Button>
+        ) : null}
+        {selectedFailedCount > 0 ? (
+          <Button size="sm" onClick={() => retryFailedDeals(selectedFailedIds)}>
+            <RefreshCw size={13} />
+            Retry failed ({formatCount(selectedFailedCount)})
+          </Button>
+        ) : null}
       </div>
       {hasSelection ? (
         <div className="bulk-toolbar-end">
@@ -87,31 +129,22 @@ export function BulkToolbar() {
 }
 
 export function BulkProgress() {
-  const { bulkJob, retryBulkFailed } = usePipeline()
-  if (!bulkJob) return null
-  const { completed, total, failedCount, running, toStage } = bulkJob
+  const { bulkJob } = usePipeline()
+  if (!bulkJob?.running) return null
+  const { completed, total, failedCount, toStage } = bulkJob
   const stageLabel = STAGE_BY_ID[toStage]?.label || toStage
 
   return (
     <div className="bulk-progress" role="status">
       <div className="bulk-progress-head">
-        <span>
-          {running ? `Moving ${formatCount(total)} deals to ${stageLabel}` : `Bulk move finished to ${stageLabel}`}
-        </span>
+        <span>{`Moving ${formatCount(total)} deals to ${stageLabel}`}</span>
         <span>
           {formatCount(completed)} / {formatCount(total)}
           {failedCount ? <span className="bulk-failed-count"> · {formatCount(failedCount)} failed</span> : null}
         </span>
       </div>
       <ProgressBar value={completed} max={total} />
-      {running ? (
-        <p className="bulk-progress-note">Requests are processed in controlled batches.</p>
-      ) : null}
-      {!running && failedCount > 0 ? (
-        <div className="bulk-progress-actions">
-          <Button size="sm" onClick={retryBulkFailed}>Retry failed</Button>
-        </div>
-      ) : null}
+      <p className="bulk-progress-note">Requests are processed in controlled batches.</p>
     </div>
   )
 }
