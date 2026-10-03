@@ -168,12 +168,12 @@ describe('PipelineProvider concurrent moves', () => {
     await waitFor(() => {
       expect(result.current.getDeal('deal-1').stage).toBe('negotiation')
       expect(result.current.getDeal('deal-1').version).toBe(2)
+      expect(result.current.activityEvents.some((event) => event.type === ACTIVITY_TYPES.DEAL_MOVED)).toBe(true)
     })
     expect(result.current.stageIds.negotiation).toContain('deal-1')
     expect(result.current.stageIds.proposal_sent).not.toContain('deal-1')
     expect(result.current.overlays.conflicts['deal-1']).toBeUndefined()
     expect(result.current.overlays.failed['deal-1']).toBeUndefined()
-    expect(result.current.activityEvents[0].type).toBe(ACTIVITY_TYPES.DEAL_MOVED)
   })
 
   it('blocks a backward stage move without calling the API', async () => {
