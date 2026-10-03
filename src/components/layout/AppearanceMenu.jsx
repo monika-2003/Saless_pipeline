@@ -16,6 +16,7 @@ export function AppearanceMenu() {
   return (
     <Dropdown
       align="right"
+      onHighlight={setTheme}
       trigger={
         <IconButton label="Appearance">
           <TriggerIcon size={15} />
@@ -27,7 +28,12 @@ export function AppearanceMenu() {
         const Icon = ICONS[item.id]
         const active = theme === item.id
         return (
-          <DropdownItem key={item.id} className={active ? 'is-active' : undefined} onClick={() => setTheme(item.id)}>
+          <DropdownItem
+            key={item.id}
+            value={item.id}
+            className={active ? 'is-active' : undefined}
+            onClick={() => setTheme(item.id)}
+          >
             <Icon size={14} />
             {item.label}
             {active ? <Check size={14} style={{ marginLeft: 'auto' }} /> : null}
