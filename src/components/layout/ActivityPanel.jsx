@@ -1,16 +1,18 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { STAGE_BY_ID } from '../../data/constants.js'
 import { useFocusTrap } from '../../hooks/useFocusTrap.js'
 import { usePipeline } from '../../store/pipelineContext.js'
-import { formatActivityHeadline, groupActivityEvents } from '../../utils/activity.js'
+import { filterActivityEvents, formatActivityHeadline, groupActivityEvents } from '../../utils/activity.js'
 import { Avatar } from '../common/Avatar.jsx'
 import { IconButton } from '../common/IconButton.jsx'
+import { Input } from '../common/Input.jsx'
 import { cx } from '../../utils/cx.js'
 
 export function ActivityPanel() {
   const { activityOpen, setActivityOpen, activityEvents, openedDealId, openDeal } = usePipeline()
+  const [query, setQuery] = useState('')
   const panelRef = useRef(null)
   useFocusTrap(panelRef, {
     enabled: activityOpen,
@@ -29,9 +31,19 @@ export function ActivityPanel() {
     return () => document.removeEventListener('mousedown', onPointerDown)
   }, [activityOpen, setActivityOpen])
 
+  useEffect(() => {
+    if (!activityOpen) setQuery('')
+  }, [activityOpen])
+
+  const groups = useMemo(
+    () => groupActivityEvents(filterActivityEvents(activityEvents, query)),
+    [activityEvents, query],
+  )
+
   if (!activityOpen) return null
 
-  const groups = groupActivityEvents(activityEvents)
+  const hasEvents = activityEvents.length > 0
+  const hasMatches = groups.some((group) => group.events.length > 0)
 
   return createPortal(
     <aside
@@ -48,14 +60,28 @@ export function ActivityPanel() {
             Recent teammate and save events for this session.
           </p>
         </div>
-        <IconButton label="Close activity" data-autofocus onClick={() => setActivityOpen(false)}>
+        <IconButton label="Close activity" onClick={() => setActivityOpen(false)}>
           <X size={14} />
         </IconButton>
       </div>
 
+      <div className="activity-search">
+        <Input
+          icon="search"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search activity"
+          aria-label="Search activity"
+          data-autofocus
+        />
+      </div>
+
       <div className="activity-feed">
-        {groups.length === 0 ? (
+        {!hasEvents ? (
           <p className="sim-help">Moves, failures, conflicts, and bulk jobs will show up here.</p>
+        ) : !hasMatches ? (
+          <p className="sim-help">No activity matches “{query.trim()}”.</p>
         ) : (
           groups.map((group) => (
             <section key={group.label} className="activity-feed-group">

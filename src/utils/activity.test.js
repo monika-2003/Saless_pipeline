@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ACTIVITY_TYPES,
   createActivityEvent,
+  filterActivityEvents,
   formatActivityHeadline,
   formatRelativeActivity,
   groupActivityEvents,
@@ -84,13 +85,37 @@ describe('formatRelativeActivity and grouping', () => {
   })
 })
 
+describe('filterActivityEvents', () => {
+  it('matches actor, company, headline, and stage', () => {
+    const events = [
+      createActivityEvent({
+        type: ACTIVITY_TYPES.DEAL_MOVED,
+        dealName: 'Indigo Infotech',
+        actorName: 'Rohan Mehta',
+        metadata: { toStage: 'proposal_sent' },
+      }),
+      createActivityEvent({
+        type: ACTIVITY_TYPES.SAVE_FAILED,
+        dealName: 'Apex Labs',
+        actorName: 'Priya Sharma',
+        metadata: { toStage: 'lost' },
+      }),
+    ]
+    expect(filterActivityEvents(events, 'indigo')).toEqual([events[0]])
+    expect(filterActivityEvents(events, 'priya')).toEqual([events[1]])
+    expect(filterActivityEvents(events, 'proposal')).toEqual([events[0]])
+    expect(filterActivityEvents(events, 'could not save')).toEqual([events[1]])
+    expect(filterActivityEvents(events, '  ')).toEqual(events)
+  })
+})
+
 describe('activity persistence', () => {
-  it('round-trips events through sessionStorage and ignores bad JSON', () => {
+  it('round-trips events through localStorage and ignores bad JSON', () => {
     const events = [{ id: '1', type: ACTIVITY_TYPES.DEAL_MOVED }]
     persistActivity(events, 150)
     expect(loadStoredActivity(150)).toEqual(events)
 
-    sessionStorage.setItem('sales-pipeline-activity', '{not json')
+    localStorage.setItem('sales-pipeline-activity', '{not json')
     expect(loadStoredActivity(150)).toEqual([])
   })
 })

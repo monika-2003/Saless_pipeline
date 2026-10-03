@@ -6,8 +6,13 @@ export function stageIndex(stageId) {
   return STAGE_INDEX[stageId] ?? -1
 }
 
+export function isClosedStage(stageId) {
+  return stageId === 'won' || stageId === 'lost'
+}
+
 export function canMoveStage(fromStage, toStage) {
   if (!fromStage || !toStage || fromStage === toStage) return false
+  if (isClosedStage(fromStage)) return false
   return stageIndex(toStage) > stageIndex(fromStage)
 }
 

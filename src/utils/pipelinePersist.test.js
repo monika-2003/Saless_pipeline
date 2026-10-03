@@ -60,7 +60,26 @@ describe('pipeline persistence', () => {
     persistDealChange({ id: 'deal-1', stage: 'won', version: 2, probability: 100, closedAt: 1 })
     flushDealChanges()
     resetPersistedDeals()
+    flushDealChanges()
     expect(localStorage.getItem(PIPELINE_PATCH_KEY)).toBeNull()
     expect(loadDealPatches()).toEqual({})
+  })
+
+  it('does not let an idle tab flush wipe another tab’s saved moves', () => {
+    persistDealChange({
+      id: 'deal-1',
+      stage: 'lost',
+      version: 3,
+      probability: 0,
+      closedAt: 123,
+    })
+    flushDealChanges()
+
+    unloadDealPatches()
+    loadDealPatches()
+    flushDealChanges()
+
+    unloadDealPatches()
+    expect(loadDealPatches()['deal-1'].stage).toBe('lost')
   })
 })

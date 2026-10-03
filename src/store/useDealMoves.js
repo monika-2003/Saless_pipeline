@@ -4,7 +4,7 @@ import { STAGE_BY_ID } from '../data/constants.js'
 import { useToasts } from '../components/common/Toast.jsx'
 import { createRealtimeEvent } from '../services/realtimeChannel.js'
 import { ACTIVITY_TYPES } from '../utils/activity.js'
-import { canMoveStage } from '../utils/stageOrder.js'
+import { canMoveStage, isClosedStage } from '../utils/stageOrder.js'
 import { actorFromName, payloadActorName } from './pipelineActors.js'
 import {
   beginDealPending,
@@ -71,6 +71,16 @@ export function useDealMoves({
     if (alreadyThere && !options.resubmit) return
 
     const fromStage = options.fromStage || deal.stage
+    if (!alreadyThere && isClosedStage(deal.stage)) {
+      if (!options.quiet) {
+        pushToast({
+          tone: 'warning',
+          title: 'This deal is closed',
+          message: `${deal.company} is in ${STAGE_BY_ID[deal.stage].label} and cannot be moved.`,
+        })
+      }
+      return
+    }
     if (!alreadyThere) {
       if (!options.allowBackward && !canMoveStage(deal.stage, toStage)) {
         if (!options.quiet) {
@@ -92,7 +102,7 @@ export function useDealMoves({
     pendingRef.current[dealId] = { fromStage: previousStage, toStage, clientVersion }
     setOverlays((current) => beginDealPending(current, dealId, pendingRef.current[dealId]))
     if (!alreadyThere) moveLocal(dealId, toStage)
-    if (undoable) lastUndoRef.current = { dealId, fromStage: previousStage, toStage }
+    if (undoable && !isClosedStage(toStage)) lastUndoRef.current = { dealId, fromStage: previousStage, toStage }
     if (options.retried) {
       pushActivity({
         type: ACTIVITY_TYPES.SAVE_RETRIED,
@@ -139,7 +149,7 @@ export function useDealMoves({
           tone: 'success',
           title: 'Deal moved successfully',
           message: `${deal.company} → ${STAGE_BY_ID[toStage].label}`,
-          action: undoable
+          action: undoable && !isClosedStage(toStage)
             ? {
                 label: 'Undo',
                 onClick: () => moveDeal(dealId, previousStage, { undoable: false, allowBackward: true }),
@@ -315,6 +325,14 @@ export function useDealMoves({
   const requestMove = useCallback((dealId, toStage) => {
     const deal = dealsRef.current[dealId]
     if (!deal || deal.stage === toStage || pendingRef.current[dealId]) return
+    if (isClosedStage(deal.stage)) {
+      pushToast({
+        tone: 'warning',
+        title: 'This deal is closed',
+        message: `${deal.company} is in ${STAGE_BY_ID[deal.stage].label} and cannot be moved.`,
+      })
+      return
+    }
     if (!canMoveStage(deal.stage, toStage)) {
       pushToast({
         tone: 'warning',

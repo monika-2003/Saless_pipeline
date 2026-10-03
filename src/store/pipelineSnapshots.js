@@ -20,6 +20,7 @@ export function moveDealLocal(dealsRef, setStageIds, dealId, toStage) {
   if (!deal || deal.stage === toStage) return deal?.stage
   const fromStage = deal.stage
   deal.stage = toStage
+  persistDealChange(deal)
   setStageIds((current) => stageLists.applyMoveToStageIds(current, dealId, fromStage, toStage))
   return fromStage
 }

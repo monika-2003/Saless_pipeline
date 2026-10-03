@@ -78,6 +78,24 @@ export function formatRelativeActivity(timestamp, now = Date.now()) {
   return `${Math.round(delta / 86_400_000)}d ago`
 }
 
+export function activityMatchesSearch(event, query) {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return true
+  const haystack = [
+    event.actorName,
+    event.dealName,
+    formatActivityHeadline(event),
+    stageLabel(event.metadata?.toStage),
+    stageLabel(event.metadata?.fromStage),
+  ].join(' ').toLowerCase()
+  return haystack.includes(needle)
+}
+
+export function filterActivityEvents(events, query) {
+  if (!query?.trim()) return events
+  return events.filter((event) => activityMatchesSearch(event, query))
+}
+
 export function groupActivityEvents(events, now = Date.now()) {
   const groups = []
   for (const event of events) {
@@ -91,9 +109,15 @@ export function groupActivityEvents(events, now = Date.now()) {
 
 const STORAGE_KEY = 'sales-pipeline-activity'
 
+function readActivityRaw() {
+  const local = localStorage.getItem(STORAGE_KEY)
+  if (local) return local
+  return sessionStorage.getItem(STORAGE_KEY)
+}
+
 export function loadStoredActivity(limit) {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
+    const raw = readActivityRaw()
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -105,7 +129,9 @@ export function loadStoredActivity(limit) {
 
 export function persistActivity(events, limit) {
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(events.slice(0, limit)))
+    const payload = JSON.stringify(events.slice(0, limit))
+    localStorage.setItem(STORAGE_KEY, payload)
+    sessionStorage.removeItem(STORAGE_KEY)
   } catch {
     /* quota or private mode */
   }
@@ -113,6 +139,7 @@ export function persistActivity(events, limit) {
 
 export function clearStoredActivity() {
   try {
+    localStorage.removeItem(STORAGE_KEY)
     sessionStorage.removeItem(STORAGE_KEY)
   } catch {
     /* ignore */

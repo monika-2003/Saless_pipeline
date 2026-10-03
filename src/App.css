@@ -296,6 +296,14 @@
   right: calc(var(--drawer-width, 420px) + 20px);
 }
 
+.activity-search {
+  margin-top: 12px;
+}
+
+.activity-search .input {
+  width: 100%;
+}
+
 .activity-feed {
   overflow: auto;
   min-height: 0;
@@ -388,6 +396,7 @@
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .table-stage-tab:hover {

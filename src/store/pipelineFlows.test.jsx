@@ -191,4 +191,28 @@ describe('pipeline move / conflict / retry / realtime flows', () => {
     })
     expect(result.current.getDeal('deal-2').stage).toBe('demo_done')
   })
+
+  it('does not let a won or lost deal change stage', async () => {
+    seedPipeline([
+      makeDeal({ id: 'won-1', company: 'Closed Won', stage: 'won', version: 2 }),
+      makeDeal({ id: 'lost-1', company: 'Closed Lost', stage: 'lost', version: 2 }),
+    ])
+    const { result } = await renderPipeline()
+    const moveSpy = vi.spyOn(pipelineApi, 'moveDeal')
+
+    act(() => {
+      result.current.requestMove('won-1', 'lost')
+      result.current.requestMove('lost-1', 'won')
+    })
+    expect(moveSpy).not.toHaveBeenCalled()
+    expect(result.current.getDeal('won-1').stage).toBe('won')
+    expect(result.current.getDeal('lost-1').stage).toBe('lost')
+
+    await act(async () => {
+      await result.current.moveDeal('won-1', 'lost', { allowBackward: true })
+      await result.current.moveDeal('lost-1', 'negotiation', { allowBackward: true })
+    })
+    expect(result.current.getDeal('won-1').stage).toBe('won')
+    expect(result.current.getDeal('lost-1').stage).toBe('lost')
+  })
 })

@@ -4,7 +4,9 @@ export const PIPELINE_SEED_KEY = 'sales-pipeline-seed'
 export const PIPELINE_PATCH_KEY = 'sales-pipeline-deal-patches'
 
 let memoryPatches = null
+let patchesDirty = false
 let flushTimer = null
+let listenersBound = false
 
 function emptyPatches() {
   return Object.create(null)
@@ -63,7 +65,30 @@ export function persistSeedNow(seedNow) {
   }
 }
 
+function bindPersistListeners() {
+  if (listenersBound || typeof window === 'undefined') return
+  listenersBound = true
+  window.addEventListener('pagehide', () => flushDealChanges())
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushDealChanges()
+  })
+  window.addEventListener('storage', (event) => {
+    if (event.key !== PIPELINE_PATCH_KEY) return
+    if (patchesDirty) return
+    if (!event.newValue) {
+      memoryPatches = emptyPatches()
+      return
+    }
+    try {
+      memoryPatches = hydratePatches(JSON.parse(event.newValue))
+    } catch {
+      /* ignore malformed writes from another tab */
+    }
+  })
+}
+
 export function loadDealPatches() {
+  bindPersistListeners()
   if (memoryPatches) return memoryPatches
   try {
     const raw = localStorage.getItem(PIPELINE_PATCH_KEY)
@@ -83,6 +108,7 @@ export function persistDealChange(deal) {
     probability: deal.probability,
     closedAt: deal.closedAt ?? null,
   }
+  patchesDirty = true
   scheduleFlush()
 }
 
@@ -91,9 +117,21 @@ export function flushDealChanges() {
     window.clearTimeout(flushTimer)
     flushTimer = null
   }
-  if (!memoryPatches) return
+  if (!memoryPatches || !patchesDirty) return
   try {
-    localStorage.setItem(PIPELINE_PATCH_KEY, serializePatches(memoryPatches))
+    const raw = localStorage.getItem(PIPELINE_PATCH_KEY)
+    if (raw) {
+      const stored = hydratePatches(JSON.parse(raw))
+      for (const id in stored) {
+        if (memoryPatches[id] == null) memoryPatches[id] = stored[id]
+      }
+    }
+    if (!Object.keys(memoryPatches).length) {
+      localStorage.removeItem(PIPELINE_PATCH_KEY)
+    } else {
+      localStorage.setItem(PIPELINE_PATCH_KEY, serializePatches(memoryPatches))
+    }
+    patchesDirty = false
   } catch {
     /* quota or private mode */
   }
@@ -133,6 +171,7 @@ export function applyDealPatches(dealsById, stageIds, patches) {
 
 export function unloadDealPatches() {
   memoryPatches = null
+  patchesDirty = false
   if (flushTimer != null) {
     window.clearTimeout(flushTimer)
     flushTimer = null
@@ -142,6 +181,7 @@ export function unloadDealPatches() {
 export function resetPersistedDeals() {
   unloadDealPatches()
   memoryPatches = emptyPatches()
+  patchesDirty = false
   try {
     localStorage.removeItem(PIPELINE_PATCH_KEY)
   } catch {

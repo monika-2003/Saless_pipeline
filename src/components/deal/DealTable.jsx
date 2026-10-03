@@ -7,7 +7,7 @@ import { sortDealIds } from '../../utils/dealSort.js'
 import { pinSelectedFirst } from '../../utils/selection.js'
 import { cx } from '../../utils/cx.js'
 import { failedDestinationLabel, formatFailedSave } from '../../utils/dealStatus.js'
-import { formatCloseRelative, formatCount, formatMoney } from '../../utils/format.js'
+import { formatCloseRelative, formatCount, formatMoney, formatSelectedOfTotal } from '../../utils/format.js'
 import { Badge } from '../common/Badge.jsx'
 import { Button } from '../common/Button.jsx'
 import { Checkbox } from '../common/Checkbox.jsx'
@@ -84,6 +84,18 @@ export function DealTable({
     const start = (safePage - 1) * pageSize
     return ids.slice(start, start + pageSize)
   }, [ids, safePage, pageSize])
+  const selectedInTab = useMemo(
+    () => ids.filter((id) => selectedIds.has(id)).length,
+    [ids, selectedIds],
+  )
+  const selectedByTab = useMemo(() => {
+    const counts = {}
+    for (const tab of resolvedTabs) {
+      const tabIdsForCount = resolvedIdsByTab[tab.id] || []
+      counts[tab.id] = tabIdsForCount.filter((id) => selectedIds.has(id)).length
+    }
+    return counts
+  }, [resolvedIdsByTab, resolvedTabs, selectedIds])
   const activeRowId = pageIds.includes(focusedRowId) ? focusedRowId : pageIds[0] || null
 
   useEffect(() => {
@@ -126,7 +138,7 @@ export function DealTable({
           >
             <span className="color-dot" style={{ background: tab.color }} />
             <span className="table-stage-label">{tab.label}</span>
-            <span className="table-stage-count">{formatCount(resolvedIdsByTab[tab.id]?.length || 0)}</span>
+            <span className="table-stage-count">{formatSelectedOfTotal(selectedByTab[tab.id] || 0, resolvedIdsByTab[tab.id]?.length || 0)}</span>
           </button>
         ))}
       </div>
@@ -135,7 +147,7 @@ export function DealTable({
         <strong style={{ '--stage': activeTab?.color }}>
           <span className="color-dot" aria-hidden="true" style={{ background: activeTab?.color }} />
           {activeTab?.label}
-          <span className="table-toolbar-count">{formatCount(ids.length)} deals</span>
+          <span className="table-toolbar-count">{formatSelectedOfTotal(selectedInTab, ids.length)} deals</span>
           {activeTab ? (
             <StageSortMenu
               stageLabel={activeTab.label}

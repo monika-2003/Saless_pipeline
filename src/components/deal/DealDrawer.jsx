@@ -82,7 +82,7 @@ export function DealDrawer() {
         <Select
           label="Move stage"
           value={deal.stage}
-          disabled={Boolean(pending)}
+          disabled={Boolean(pending) || !movableStages(deal.stage).length}
           onChange={(stage) => requestMove(deal.id, stage)}
           options={[
             { value: deal.stage, label: STAGE_BY_ID[deal.stage].label, color: STAGE_BY_ID[deal.stage].color },

@@ -71,6 +71,11 @@ export function formatCount(value) {
   return value.toLocaleString('en-IN')
 }
 
+export function formatSelectedOfTotal(selected, total) {
+  if (selected > 0) return `${formatCount(selected)} of ${formatCount(total)}`
+  return formatCount(total)
+}
+
 export function initials(name) {
   return name
     .split(' ')

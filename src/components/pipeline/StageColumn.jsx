@@ -3,7 +3,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Inbox } from 'lucide-react'
 import { usePipeline } from '../../store/pipelineContext.js'
-import { formatCount } from '../../utils/format.js'
+import { formatSelectedOfTotal } from '../../utils/format.js'
 import { canMoveStage } from '../../utils/stageOrder.js'
 import { Checkbox } from '../common/Checkbox.jsx'
 import { EmptyState } from '../common/EmptyState.jsx'
@@ -76,7 +76,7 @@ export function StageColumn({ stage, ids, dragFromStage, onCardSelect }) {
         Boolean(dragFromStage) && isBlocked && 'is-blocked',
       )}
       style={{ '--stage': stage.color }}
-      aria-label={`${stage.label}, ${ids.length} deals`}
+      aria-label={`${stage.label}, ${formatSelectedOfTotal(selectedInColumn, ids.length)} deals`}
     >
       <header className="stage-header">
         <div className="stage-title">
@@ -84,7 +84,7 @@ export function StageColumn({ stage, ids, dragFromStage, onCardSelect }) {
           {stage.label}
         </div>
         <div className="stage-header-actions">
-          <span className="stage-count">{formatCount(ids.length)}</span>
+          <span className="stage-count">{formatSelectedOfTotal(selectedInColumn, ids.length)}</span>
           <StageSortMenu
             stageLabel={stage.label}
             sort={stageSorts[stage.id]}
