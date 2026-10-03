@@ -97,6 +97,26 @@
   color: var(--text-primary);
 }
 
+.stage-sort-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.stage-sort-btn.is-active,
+.stage-sort-btn[aria-expanded='true'] {
+  color: var(--stage, var(--primary));
+  border-color: color-mix(in srgb, var(--stage, var(--primary)) 35%, var(--border));
+  background: color-mix(in srgb, var(--stage, var(--primary)) 10%, var(--surface));
+}
+
+.stage-sort-dir {
+  margin-left: auto;
+  color: var(--text-muted);
+  display: inline-flex;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

@@ -8,6 +8,7 @@ import { Avatar } from '../common/Avatar.jsx'
 import { STAGE_BY_ID } from '../../data/constants.js'
 import { cx } from '../../utils/cx.js'
 import { formatCloseRelative, formatMoney } from '../../utils/format.js'
+import { formatFailedSave } from '../../utils/dealStatus.js'
 import './deal.css'
 
 function DealCardComponent({
@@ -55,6 +56,7 @@ function DealCardComponent({
       data-deal-id={deal.id}
       onClick={() => onOpen(deal.id)}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return
         if (event.key === 'Enter') {
           event.preventDefault()
           event.stopPropagation()
@@ -111,7 +113,7 @@ function DealCardComponent({
         <div className="status-row">
           <div className="deal-status is-failed">
             <AlertTriangle size={13} />
-            Save failed
+            {formatFailedSave(failed)}
           </div>
           <div className="status-actions">
             <Button

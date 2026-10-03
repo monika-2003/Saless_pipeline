@@ -41,6 +41,7 @@ import {
   createEmptyFilters,
   matchesView,
 } from '../utils/filters.js'
+import { nextStageSort } from '../utils/dealSort.js'
 import { canMoveStage } from '../utils/stageOrder.js'
 import { PipelineContext } from './pipelineContext.js'
 import * as stageLists from './stageLists.js'
@@ -87,6 +88,7 @@ export function PipelineProvider({ children }) {
   const [overlays, setOverlays] = useState({ ...stageLists.emptyOverlays(), saved: Object.create(null) })
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [pinSelected, setPinSelected] = useState(false)
+  const [stageSorts, setStageSorts] = useState(() => Object.create(null))
   const [view, setView] = useState('all')
   const [layout, setLayout] = useState('board')
 
@@ -390,6 +392,16 @@ export function PipelineProvider({ children }) {
       return result
     }
 
+    if (result.error === 'CANCELLED') {
+      setOverlays((current) => {
+        if (!current.pending[dealId]) return current
+        const next = copyOverlays(current)
+        delete next.pending[dealId]
+        return next
+      })
+      return result
+    }
+
     if (result.error === 'CONFLICT') {
       if (dealsRef.current[dealId]?.stage !== previousStage) moveLocal(dealId, previousStage)
       const serverDeal = result.serverDeal
@@ -535,6 +547,7 @@ export function PipelineProvider({ children }) {
       })
       pushToast({ tone: 'success', title: 'Kept your change' })
     }
+    if (result.error === 'CANCELLED') return
   }, [applyDealSnapshot, markSaved, overlays.conflicts, publishRealtime, pushActivity, pushToast])
 
   const undoLast = useCallback(() => {
@@ -626,6 +639,7 @@ export function PipelineProvider({ children }) {
     setFocusedDealId(null)
     setFilterDraft(createEmptyFilters())
     setView('all')
+    setStageSorts(Object.create(null))
     pushToast({
       tone: 'info',
       title: 'Demo data reset',
@@ -730,7 +744,7 @@ export function PipelineProvider({ children }) {
   }, [pushToast, resolveSimulationIds])
 
   const toggleSelect = useCallback((dealId, options = {}) => {
-    if (pendingRef.current[dealId]) return
+    if (bulkRunningRef.current || pendingRef.current[dealId]) return
     setPinSelected(false)
     setSelectedIds((current) => {
       const next = options.replace ? new Set() : new Set(current)
@@ -746,6 +760,7 @@ export function PipelineProvider({ children }) {
   }, [])
 
   const selectRange = useCallback((ids, fromId, toId) => {
+    if (bulkRunningRef.current) return
     const from = ids.indexOf(fromId)
     const to = ids.indexOf(toId)
     if (from < 0 || to < 0) return
@@ -761,6 +776,7 @@ export function PipelineProvider({ children }) {
   }, [])
 
   const selectMany = useCallback((ids) => {
+    if (bulkRunningRef.current) return
     setPinSelected(false)
     setSelectedIds(new Set(ids))
   }, [])
@@ -772,6 +788,13 @@ export function PipelineProvider({ children }) {
 
   const pinSelectedToTop = useCallback(() => {
     setPinSelected((current) => !current)
+  }, [])
+
+  const setStageSort = useCallback((stageId, key) => {
+    setStageSorts((current) => ({
+      ...current,
+      [stageId]: nextStageSort(current[stageId], key),
+    }))
   }, [])
 
   const bulkMove = useCallback(async (ids, toStage, options = {}) => {
@@ -793,6 +816,8 @@ export function PipelineProvider({ children }) {
       })
     }
     if (jobs.length === 0) return
+
+    clearSelection()
 
     const jobId = ++bulkJobIdRef.current
     bulkRunningRef.current = true
@@ -1066,8 +1091,9 @@ export function PipelineProvider({ children }) {
       })
       return
     }
+    clearSelection()
     bulkMove(movable, toStage)
-  }, [bulkMove, overlays.failed, pushToast])
+  }, [bulkMove, clearSelection, overlays.failed, pushToast])
 
   const retryFailedDeals = useCallback(async (ids) => {
     const groups = new Map()
@@ -1230,6 +1256,8 @@ export function PipelineProvider({ children }) {
       selectedIds: visibleSelectedIds,
       pinSelected,
       pinSelectedToTop,
+      stageSorts,
+      setStageSort,
       view,
       setView,
       layout,
@@ -1291,6 +1319,8 @@ export function PipelineProvider({ children }) {
       overlays,
       pinSelected,
       pinSelectedToTop,
+      setStageSort,
+      stageSorts,
       ready,
       requestBulkMove,
       requestMove,

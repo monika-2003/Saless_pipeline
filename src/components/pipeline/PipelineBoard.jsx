@@ -3,6 +3,7 @@ import { DndContext, DragOverlay, PointerSensor, closestCorners, useSensor, useS
 import { STAGES, STAGE_BY_ID } from '../../data/constants.js'
 import { useMediaQuery } from '../../hooks/useMediaQuery.js'
 import { usePipeline } from '../../store/pipelineContext.js'
+import { sortDealIds } from '../../utils/dealSort.js'
 import { pinSelectedFirst } from '../../utils/selection.js'
 import { DealCard } from '../deal/DealCard.jsx'
 import { StageColumn } from './StageColumn.jsx'
@@ -26,6 +27,7 @@ export function PipelineBoard() {
     selectMany,
     toggleSelect,
     selectRange,
+    stageSorts,
   } = usePipeline()
   const [activeId, setActiveId] = useState(null)
   const isNarrow = useMediaQuery('(max-width: 768px)')
@@ -41,13 +43,14 @@ export function PipelineBoard() {
   )
 
   const columns = useMemo(
-    () => STAGES.map((stage) => ({
-      stage,
-      ids: pinSelected
-        ? pinSelectedFirst(visibleStageIds[stage.id] || [], selectedIds)
-        : (visibleStageIds?.[stage.id] || []),
-    })),
-    [pinSelected, selectedIds, visibleStageIds],
+    () => STAGES.map((stage) => {
+      const sorted = sortDealIds(visibleStageIds?.[stage.id] || [], getDeal, stageSorts[stage.id])
+      return {
+        stage,
+        ids: pinSelected ? pinSelectedFirst(sorted, selectedIds) : sorted,
+      }
+    }),
+    [getDeal, pinSelected, selectedIds, stageSorts, visibleStageIds],
   )
 
   const onDragEnd = useCallback(
@@ -104,7 +107,7 @@ export function PipelineBoard() {
   }, [selectRange, setFocusedDealId, toggleSelect])
 
   const onBoardKeyDown = useCallback((event) => {
-    if (event.target.closest('input, textarea, [role="menu"], [role="listbox"]')) return
+    if (event.target.closest('input, textarea, [role="menu"], [role="listbox"], .dropdown')) return
 
     const currentId = focusedDealId || firstDealId(columns)
     if (!currentId) return

@@ -3,12 +3,15 @@ import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { STAGES, TABLE_PAGE_SIZE, TABLE_PAGE_SIZES } from '../../data/constants.js'
 import { useRovingTabs } from '../../hooks/useRovingTabs.js'
 import { usePipeline } from '../../store/pipelineContext.js'
+import { sortDealIds } from '../../utils/dealSort.js'
 import { pinSelectedFirst } from '../../utils/selection.js'
 import { cx } from '../../utils/cx.js'
+import { failedDestinationLabel, formatFailedSave } from '../../utils/dealStatus.js'
 import { formatCloseRelative, formatCount, formatMoney } from '../../utils/format.js'
 import { Badge } from '../common/Badge.jsx'
 import { Button } from '../common/Button.jsx'
 import { Checkbox } from '../common/Checkbox.jsx'
+import { StageSortMenu } from '../pipeline/StageSortMenu.jsx'
 import { DealMoveMenu } from './DealMoveMenu.jsx'
 import './deal.css'
 
@@ -18,6 +21,9 @@ export function DealTable({
   idsByTab,
   defaultTabId,
   getWhy,
+  showStatus = true,
+  showMove = true,
+  showRetryTo = false,
 } = {}) {
   const {
     visibleStageIds,
@@ -31,6 +37,9 @@ export function DealTable({
     requestMove,
     retryDeal,
     discardFailed,
+    filters,
+    stageSorts,
+    setStageSort,
   } = usePipeline()
 
   const resolvedTabs = tabs || STAGES.map((stage) => ({
@@ -49,10 +58,11 @@ export function DealTable({
   const { onKeyDown: onTabKeyDown, tabIndexFor } = useRovingTabs(tablistRef, tabIds, tabId, setTabId)
   const activeTab = resolvedTabs.find((tab) => tab.id === tabId) || resolvedTabs[0]
   const rawIds = resolvedIdsByTab[activeTab?.id] || []
-  const ids = useMemo(
-    () => (pinSelected ? pinSelectedFirst(rawIds, selectedIds) : rawIds),
-    [pinSelected, rawIds, selectedIds],
-  )
+  const sort = stageSorts[activeTab?.id]
+  const ids = useMemo(() => {
+    const sorted = sortDealIds(rawIds, getDeal, sort)
+    return pinSelected ? pinSelectedFirst(sorted, selectedIds) : sorted
+  }, [getDeal, pinSelected, rawIds, selectedIds, sort])
   const pageCount = Math.max(1, Math.ceil(ids.length / pageSize))
   const safePage = Math.min(page, pageCount)
 
@@ -63,12 +73,12 @@ export function DealTable({
 
   useEffect(() => {
     setPage(1)
-  }, [tabId, ids.length, pageSize])
+  }, [tabId, pageSize, filters])
 
   useEffect(() => {
     if (!pinSelected || !selectedIds.size) return
-    if (rawIds.some((id) => selectedIds.has(id))) setPage(1)
-  }, [pinSelected, rawIds, selectedIds])
+    setPage(1)
+  }, [pinSelected, selectedIds])
 
   const pageIds = useMemo(() => {
     const start = (safePage - 1) * pageSize
@@ -88,7 +98,7 @@ export function DealTable({
   const stageHasSaving = rawIds.some((id) => overlays.pending[id])
   const startIndex = ids.length === 0 ? 0 : (safePage - 1) * pageSize + 1
   const endIndex = Math.min(ids.length, safePage * pageSize)
-  const colCount = getWhy ? 11 : 10
+  const colCount = 8 + (getWhy ? 1 : 0) + (showStatus ? 1 : 0) + (showMove ? 1 : 0) + (showRetryTo ? 1 : 0)
 
   return (
     <div className="deal-table-wrap">
@@ -126,6 +136,13 @@ export function DealTable({
           <span className="color-dot" aria-hidden="true" style={{ background: activeTab?.color }} />
           {activeTab?.label}
           <span className="table-toolbar-count">{formatCount(ids.length)} deals</span>
+          {activeTab ? (
+            <StageSortMenu
+              stageLabel={activeTab.label}
+              sort={sort}
+              onSelect={(key) => setStageSort(activeTab.id, key)}
+            />
+          ) : null}
         </strong>
         <span className="table-range">
           Showing {formatCount(startIndex)}–{formatCount(endIndex)} of {formatCount(ids.length)}
@@ -159,8 +176,9 @@ export function DealTable({
               <th className="col-priority">Priority</th>
               <th className="col-close">Close</th>
               {getWhy ? <th className="col-why">Why</th> : null}
-              <th className="col-status">Status</th>
-              <th className="col-move">Move</th>
+              {showRetryTo ? <th className="col-retry-to">Retry to</th> : null}
+              {showStatus ? <th className="col-status">Status</th> : null}
+              {showMove ? <th className="col-move">Move</th> : null}
               <th className="col-actions">Actions</th>
             </tr>
           </thead>
@@ -234,21 +252,30 @@ export function DealTable({
                   <td className="col-priority"><Badge tone={deal.priority}>{deal.priority}</Badge></td>
                   <td className="col-close">{formatCloseRelative(deal.expectedCloseDate)}</td>
                   {getWhy ? <td className="col-why">{getWhy(deal)}</td> : null}
-                  <td className="col-status">
-                    {pending ? 'Saving…' : null}
-                    {saved && !pending && !failed ? 'Saved' : null}
-                    {failed ? <span className="table-failed-label">Save failed</span> : null}
-                    {conflict ? 'Conflict' : null}
-                    {!pending && !saved && !failed && !conflict ? '—' : null}
-                  </td>
-                  <td className="col-move" onClick={(event) => event.stopPropagation()}>
-                    <DealMoveMenu
-                      deal={deal}
-                      onMove={requestMove}
-                      disabled={Boolean(pending)}
-                      tabIndex={id === activeRowId ? 0 : -1}
-                    />
-                  </td>
+                  {showRetryTo ? (
+                    <td className="col-retry-to">
+                      {failedDestinationLabel(failed) || '—'}
+                    </td>
+                  ) : null}
+                  {showStatus ? (
+                    <td className="col-status">
+                      {pending ? 'Saving…' : null}
+                      {saved && !pending && !failed ? 'Saved' : null}
+                      {failed ? <span className="table-failed-label">{formatFailedSave(failed)}</span> : null}
+                      {conflict ? 'Conflict' : null}
+                      {!pending && !saved && !failed && !conflict ? '—' : null}
+                    </td>
+                  ) : null}
+                  {showMove ? (
+                    <td className="col-move" onClick={(event) => event.stopPropagation()}>
+                      <DealMoveMenu
+                        deal={deal}
+                        onMove={requestMove}
+                        disabled={Boolean(pending)}
+                        tabIndex={id === activeRowId ? 0 : -1}
+                      />
+                    </td>
+                  ) : null}
                   <td className="col-actions" onClick={(event) => event.stopPropagation()}>
                     {failed ? (
                       <div className="table-failed-actions">

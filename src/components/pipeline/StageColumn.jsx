@@ -9,6 +9,7 @@ import { Checkbox } from '../common/Checkbox.jsx'
 import { EmptyState } from '../common/EmptyState.jsx'
 import { cx } from '../../utils/cx.js'
 import { DealCard } from '../deal/DealCard.jsx'
+import { StageSortMenu } from './StageSortMenu.jsx'
 
 const CARD_GAP = 6
 const FAILED_CARD_GAP = 16
@@ -31,6 +32,8 @@ export function StageColumn({ stage, ids, dragFromStage, onCardSelect }) {
     retryDeal,
     discardFailed,
     resolveConflict,
+    stageSorts,
+    setStageSort,
   } = usePipeline()
 
   const { setNodeRef, isOver } = useDroppable({
@@ -82,6 +85,12 @@ export function StageColumn({ stage, ids, dragFromStage, onCardSelect }) {
         </div>
         <div className="stage-header-actions">
           <span className="stage-count">{formatCount(ids.length)}</span>
+          <StageSortMenu
+            stageLabel={stage.label}
+            sort={stageSorts[stage.id]}
+            onSelect={(key) => setStageSort(stage.id, key)}
+          />
+
           <Checkbox
             aria-label={`Select visible deals in ${stage.label}`}
             checked={allVisibleSelected}

@@ -530,6 +530,7 @@
 .deal-table .col-priority { width: 10%; }
 .deal-table .col-close { width: 12%; }
 .deal-table .col-why { width: 16%; }
+.deal-table .col-retry-to { width: 14%; }
 .deal-table .col-status { width: 10%; }
 .deal-table .col-move { width: 128px; overflow: visible; }
 .deal-table .col-actions {

@@ -443,6 +443,48 @@ describe('PipelineProvider bulk partial failure', () => {
     expect(result.current.bulkJob.failedIds).toEqual(['deal-2'])
   })
 
+  it('clears selection as soon as a bulk move starts', async () => {
+    const { result } = await renderPipeline()
+    const pending = []
+    vi.spyOn(pipelineApi, 'moveDeal').mockImplementation((payload) => (
+      new Promise((resolve) => {
+        pending.push({ payload, resolve })
+      })
+    ))
+
+    act(() => {
+      result.current.selectMany(['deal-1', 'deal-2', 'deal-3'])
+    })
+    expect(result.current.selectedIds.size).toBe(3)
+
+    let job
+    act(() => {
+      job = result.current.bulkMove(['deal-1', 'deal-2', 'deal-3'], 'negotiation')
+    })
+    expect(result.current.bulkJob.running).toBe(true)
+    expect(result.current.selectedIds.size).toBe(0)
+    expect(result.current.pinSelected).toBe(false)
+
+    act(() => {
+      result.current.selectMany(['deal-1', 'deal-2'])
+    })
+    expect(result.current.selectedIds.size).toBe(0)
+
+    act(() => {
+      for (const entry of pending) {
+        entry.resolve({
+          ok: true,
+          fromStage: 'proposal_sent',
+          deal: { ...result.current.getDeal(entry.payload.id), stage: 'negotiation', version: 2 },
+        })
+      }
+    })
+    await act(async () => {
+      await job
+    })
+    expect(result.current.selectedIds.size).toBe(0)
+  })
+
   it('returns failed deals to the previous stage and keeps saved deals on the next stage', async () => {
     const { result } = await renderPipeline()
     const original = pipelineApi.moveDeal.bind(pipelineApi)
@@ -685,5 +727,85 @@ describe('PipelineProvider persistence', () => {
     expect(result.current.getDeal('deal-1').stage).toBe('proposal_sent')
     expect(result.current.stageIds.proposal_sent).toContain('deal-1')
     expect(result.current.stageIds.lost || []).not.toContain('deal-1')
+  })
+
+  it('does not record a failure when reset cancels an in-flight single move', async () => {
+    const { result } = await renderPipeline()
+    act(() => {
+      result.current.updateSimulation({
+        ...QUIET_SIMULATION,
+        latencyMin: 80,
+        latencyMax: 80,
+      })
+    })
+
+    let movePromise
+    act(() => {
+      movePromise = result.current.moveDeal('deal-1', 'negotiation')
+    })
+    expect(result.current.overlays.pending['deal-1']).toBeTruthy()
+    expect(result.current.getDeal('deal-1').stage).toBe('negotiation')
+
+    act(() => {
+      result.current.resetDemoData()
+    })
+    expect(result.current.getDeal('deal-1').stage).toBe('proposal_sent')
+
+    await act(async () => {
+      await movePromise
+    })
+
+    expect(result.current.getDeal('deal-1').stage).toBe('proposal_sent')
+    expect(result.current.stageIds.proposal_sent).toContain('deal-1')
+    expect(result.current.overlays.failed['deal-1']).toBeUndefined()
+    expect(result.current.overlays.pending['deal-1']).toBeUndefined()
+    expect(result.current.activityEvents.some((event) => event.type === ACTIVITY_TYPES.SAVE_FAILED)).toBe(false)
+  })
+
+  it('ignores Keep mine when reset cancels the force write', async () => {
+    const { result } = await renderPipeline()
+    act(() => {
+      result.current.updateSimulation({
+        ...QUIET_SIMULATION,
+        latencyMin: 40,
+        latencyMax: 40,
+      })
+    })
+
+    let movePromise
+    act(() => {
+      movePromise = result.current.moveDeal('deal-1', 'negotiation')
+    })
+    pipelineApi.teammateMove('deal-1', 'lost', 'Rahul Mehta', { silent: true })
+    await act(async () => {
+      await movePromise
+    })
+    await waitFor(() => {
+      expect(result.current.overlays.conflicts['deal-1']).toBeTruthy()
+    })
+
+    act(() => {
+      result.current.updateSimulation({
+        ...QUIET_SIMULATION,
+        latencyMin: 80,
+        latencyMax: 80,
+      })
+    })
+
+    let resolvePromise
+    act(() => {
+      resolvePromise = result.current.resolveConflict('deal-1', 'mine')
+    })
+    act(() => {
+      result.current.resetDemoData()
+    })
+    await act(async () => {
+      await resolvePromise
+    })
+
+    expect(result.current.getDeal('deal-1').stage).toBe('proposal_sent')
+    expect(result.current.overlays.conflicts['deal-1']).toBeUndefined()
+    expect(result.current.overlays.failed['deal-1']).toBeUndefined()
+    expect(result.current.activityEvents.some((event) => event.type === ACTIVITY_TYPES.CONFLICT_RESOLVED)).toBe(false)
   })
 })

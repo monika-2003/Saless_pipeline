@@ -1,17 +1,10 @@
 import { useMemo } from 'react'
-import { STAGES, STAGE_BY_ID } from '../../data/constants.js'
+import { STAGES } from '../../data/constants.js'
 import { usePipeline } from '../../store/pipelineContext.js'
 import { DealTable } from '../deal/DealTable.jsx'
 
-function formatFailedWhy(deal, overlays) {
-  const failed = overlays.failed[deal.id]
-  const dest = failed?.toStage ? STAGE_BY_ID[failed.toStage] : null
-  if (dest) return `Could not save move to ${dest.label}`
-  return 'The last save did not reach the server'
-}
-
 export function FailedTable() {
-  const { listIds, getDeal, overlays } = usePipeline()
+  const { listIds, getDeal } = usePipeline()
   const idsByTab = useMemo(() => {
     const grouped = Object.fromEntries(STAGES.map((stage) => [stage.id, []]))
     for (const id of listIds || []) {
@@ -35,7 +28,9 @@ export function FailedTable() {
       tabs={tabs}
       idsByTab={idsByTab}
       defaultTabId={defaultTabId}
-      getWhy={(deal) => formatFailedWhy(deal, overlays)}
+      showStatus={false}
+      showMove={false}
+      showRetryTo
     />
   )
 }

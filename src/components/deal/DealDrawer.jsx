@@ -2,6 +2,7 @@ import { STAGE_BY_ID } from '../../data/constants.js'
 import { canMoveStage, movableStages } from '../../utils/stageOrder.js'
 import { usePipeline } from '../../store/pipelineContext.js'
 import { getDealDrawerActivity, groupActivityByDay } from '../../utils/dealActivity.js'
+import { formatFailedSave } from '../../utils/dealStatus.js'
 import { formatDateLong, formatMoney, formatTime } from '../../utils/format.js'
 import { Avatar } from '../common/Avatar.jsx'
 import { Badge } from '../common/Badge.jsx'
@@ -117,9 +118,12 @@ export function DealDrawer() {
       {pending ? <p className="deal-status is-saving">Saving…</p> : null}
       {saved && !pending ? <p className="deal-status is-saved">Saved</p> : null}
       {failed ? (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Button onClick={() => retryDeal(deal.id)}>Retry</Button>
-          <Button onClick={() => discardFailed(deal.id)}>Undo</Button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <p className="deal-status is-failed">{formatFailedSave(failed)}</p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button onClick={() => retryDeal(deal.id)}>Retry</Button>
+            <Button onClick={() => discardFailed(deal.id)}>Undo</Button>
+          </div>
         </div>
       ) : null}
       {conflict ? (
